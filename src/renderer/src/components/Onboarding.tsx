@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ProbeResult } from '@core/model/types'
-import { formatBytes, formatTs } from '../lib/format'
+import { displayPath, formatBytes, formatTs } from '../lib/format'
 
 const STATUS_META: Record<
   ProbeResult['status'],
@@ -45,7 +45,7 @@ export default function Onboarding(props: { onDone: () => void }): React.JSX.Ele
                     {p.displayName} <span className={`probe-tag ${meta.cls}`}>{meta.label}</span>
                   </div>
                   <div className="probe-detail muted">
-                    {p.root}
+                    {displayPath(p.root)}
                     {p.status === 'ok' && (
                       <>
                         {' '}· {p.fileCount} 个文件 · {formatBytes(p.sizeBytes)}

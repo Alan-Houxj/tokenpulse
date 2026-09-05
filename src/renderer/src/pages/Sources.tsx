@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AgentId, ProbeResult } from '@core/model/types'
-import { formatBytes, formatTs } from '../lib/format'
+import { displayPath, formatBytes, formatTs } from '../lib/format'
 
 const AGENTS: { id: AgentId; label: string }[] = [
   { id: 'claude-code', label: 'Claude Code' },
@@ -79,7 +79,7 @@ export default function Sources(): React.JSX.Element {
                 {STATUS_LABEL[p.status]}
               </span>
             </div>
-            <div className="muted small mono">{p.root}</div>
+            <div className="muted small mono">{displayPath(p.root)}</div>
             {p.status === 'ok' && (
               <div className="muted small">
                 {p.fileCount} 个数据文件 · {formatBytes(p.sizeBytes)}

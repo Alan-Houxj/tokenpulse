@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AgentId, SessionRow } from '@core/model/types'
 import type { DateRange } from '../lib/daterange'
-import { formatTokens, formatTs, formatUSD } from '../lib/format'
+import { displayPath, formatTokens, formatTs, formatUSD } from '../lib/format'
 import Dropdown, { type DropdownOption } from '../components/Dropdown'
 
 const AGENT_OPTIONS: DropdownOption<string>[] = [
@@ -103,7 +103,7 @@ export default function Sessions(props: {
                 <tr key={`${r.agent}:${r.sessionId}`}>
                   <td className="text">{agentShort(r.agent)}</td>
                   <td className="mono small">{r.sessionId.slice(0, 12)}…</td>
-                  <td className="small" title={r.projectPath}>
+                  <td className="small" title={displayPath(r.projectPath)}>
                     {r.projectPath ? lastSegment(r.projectPath) : '—'}
                   </td>
                   <td className="mono small">{r.models.join(', ')}</td>

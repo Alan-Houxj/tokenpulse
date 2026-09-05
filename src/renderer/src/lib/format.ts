@@ -1,5 +1,18 @@
 /** 展示层格式化工具（renderer 专用） */
 
+/**
+ * 路径脱敏：把用户主目录折叠为 ~（终端惯例），
+ * 避免 Windows 账户名（C:\Users\<你>\...）出现在界面上。
+ * 覆盖 Windows / macOS / Linux 三种主目录形态。
+ */
+export function displayPath(p?: string): string {
+  if (!p) return '—'
+  return p
+    .replace(/^[A-Za-z]:[\\/](Users|Documents and Settings)[\\/][^^/\\]+/i, '~')
+    .replace(/^\/Users\/[^/]+/, '~')
+    .replace(/^\/home\/[^/]+/, '~')
+}
+
 export function formatTokens(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
   if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`

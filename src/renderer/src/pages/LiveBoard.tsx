@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentId, LiveAgentCard, LiveTimelineItem } from '@core/model/types'
-import { formatTokens, formatUSD } from '../lib/format'
+import { displayPath, formatTokens, formatUSD } from '../lib/format'
 
 type FilterId = 'all' | 'running' | 'idle' | 'error'
 
@@ -241,7 +241,7 @@ function AgentCard(props: {
           <span className={`live-dot ${meta.dot}`} aria-hidden />
           {agentLabel(c.agent)}
         </span>
-        <span className="live-project-tag" title={c.projectPath}>
+        <span className="live-project-tag" title={displayPath(c.projectPath)}>
           {c.projectName}
         </span>
         {c.anomaly && (
