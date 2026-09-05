@@ -33,7 +33,7 @@ TokenPulse 把它们统统读出来，放进一个仪表盘。
 
 ## 下载安装
 
-> **当前版本 v0.1 仅提供 Windows 安装包**，代码跨平台，macOS / Linux 在计划中。
+> **当前版本仅提供 Windows 安装包**，代码跨平台。
 
 1. 进入 [Releases 下载页](https://github.com/Alan-Houxj/tokenpulse/releases)
 2. 展开 Assets，选择：
@@ -54,13 +54,6 @@ TokenPulse 把它们统统读出来，放进一个仪表盘。
 | Qwen Code | ✓ 完整 |
 
 你的 Agent 没在列表里？[提个 issue](https://github.com/Alan-Houxj/tokenpulse/issues) 告诉我们它的数据存在哪。
-
-## 路线图
-
-- [ ] BYOK 聊天客户端（Cherry Studio / ChatBox / Jan / AnythingLLM）
-- [ ] 订阅配额页（5 小时 / 周窗口用量与预警）
-- [ ] macOS / Linux 构建（CI 流水线）
-- [ ] CSV 导出 · 自动更新 · winget / brew 上架
 
 ## 参与开发
 
