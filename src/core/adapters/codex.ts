@@ -25,6 +25,10 @@ interface CodexPayload {
   usage?: CodexUsage
   model?: string
   cwd?: string
+  info?: {
+    total_token_usage?: CodexUsage
+    last_token_usage?: CodexUsage
+  }
 }
 
 interface CodexLine {
@@ -107,8 +111,35 @@ export class CodexAdapter implements SourceAdapter {
           costEstUSD: 0,
           projectPath: currentCwd
         })
+      } else if (raw.type === 'event_msg' && raw.payload.type === 'token_count') {
+        // 旧版格式（<2026-09）：无 token_usage_record，只有 token_count。
+        // info.last_token_usage = 最近一次响应的增量；total_token_usage 为累计（非单调，不可求和）。
+        // 幂等键用累计值指纹：重放相同累计只记一次，新响应累计变化生成新键。
+        const info = raw.payload.info
+        const last = info?.last_token_usage
+        const total = info?.total_token_usage
+        if (!last || !total) continue
+        const sid = sessionId ?? 'unknown-session'
+        const cached = Math.max(0, last.cached_input_tokens ?? 0)
+        const reasoning = Math.max(0, last.reasoning_output_tokens ?? 0)
+        events.push({
+          id: `codex:${sid}:tc:${total.input_tokens ?? 0}-${total.output_tokens ?? 0}`,
+          ts,
+          agent: 'codex',
+          sessionId: sid,
+          model: currentModel,
+          tokens: {
+            input: Math.max(0, (last.input_tokens ?? 0) - cached),
+            output: Math.max(0, (last.output_tokens ?? 0) - reasoning),
+            reasoning,
+            cacheRead: cached,
+            cacheWrite: Math.max(0, last.cache_write_input_tokens ?? 0)
+          },
+          costUSD: undefined,
+          costEstUSD: 0,
+          projectPath: currentCwd
+        })
       }
-      // event_msg(token_count)：仅 UI 刷新用途，累计值不可信，跳过（V1.1 的 rate_limits 另取）
     }
 
     return {

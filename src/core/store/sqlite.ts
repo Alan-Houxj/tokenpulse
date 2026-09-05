@@ -498,6 +498,11 @@ export class Store {
     return this.db.prepare(`DELETE FROM events WHERE agent = 'zcode'`).run().changes
   }
 
+  /** 迁移 v5：重置 Codex 位点触发全量重扫（旧格式补采，幂等键防重） */
+  resetCodexPositionsV5(): number {
+    return this.db.prepare(`DELETE FROM file_positions WHERE agent = 'codex'`).run().changes
+  }
+
   /**
    * 按给定价格表重算全部历史事件的估算成本。
    * 价格表更新 / 用户覆盖价格后调用，保证历史口径一致（事件量万级内毫秒完成）。

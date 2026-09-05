@@ -59,10 +59,17 @@ export function bootstrap(): void {
   }
 
   // 迁移 v4：ZCode 项目路径 JOIN 列名修复，重采带回 project_path
-  if (store.getMeta('data_version') !== '4') {
+  if (store.getMeta('data_version') !== '4' && store.getMeta('data_version') !== '5') {
     const n = store.migrateZcodePathsV4()
-    store.setMeta('data_version', '4')
     if (n > 0) console.log(`[agentmeter] 已重置 ${n} 条 ZCode 事件以回填项目路径`)
+  }
+
+  // 迁移 v5：Codex 旧格式（token_count）解析已支持 + ZCode WAL 签名修复，
+  // 重置 codex 位点重新全量扫描（幂等键保护不重复入库）
+  if (store.getMeta('data_version') !== '5') {
+    store.resetCodexPositionsV5()
+    store.setMeta('data_version', '5')
+    console.log('[agentmeter] 已重置 Codex 位点（旧格式重扫 + WAL 签名修复）')
   }
 
   scheduler = new UsageScheduler({

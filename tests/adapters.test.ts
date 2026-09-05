@@ -116,13 +116,39 @@ describe('CodexAdapter', () => {
     expect(files).toHaveLength(1)
 
     const { events } = await adapter.readIncremental(files[0]!, 0)
-    expect(events).toHaveLength(1) // token_count 不产生事件
-    const e = events[0]!
+    expect(events).toHaveLength(2) // 新格式 1 条 + 旧格式 token_count 1 条（现为受支持格式）
+    const e = events.find((x) => x.id.includes('resp_001'))!
     expect(e.id).toBe('codex:codex-sess-1:resp_001')
     expect(e.model).toBe('gpt-5.6-sol')
     // 71495-70656=839 非缓存输入；305-100=205 输出；reasoning 单列
     expect(e.tokens).toEqual({ input: 839, output: 205, reasoning: 100, cacheRead: 70656, cacheWrite: 0 })
     expect(e.projectPath).toBe('C:/work/proj')
+  })
+
+  it('旧格式 token_count：解析增量并以累计指纹去重重放', async () => {
+    const root = join(dir, '.codex', 'sessions')
+    mkdirSync(root, { recursive: true })
+    const f = join(root, 'rollout-old.jsonl')
+    const ctx = JSON.stringify({ timestamp: '2026-07-18T23:00:00.000Z', type: 'turn_context', payload: { model: 'gpt-5.2', cwd: 'C:/old' } }) + '\n'
+    const tc = (li: number, lo: number, ti: number, to: number, t = '2026-07-18T23:01:00.000Z') =>
+      JSON.stringify({
+        timestamp: t, type: 'event_msg',
+        payload: { type: 'token_count', info: { last_token_usage: { input_tokens: li, cached_input_tokens: 0, output_tokens: lo }, total_token_usage: { input_tokens: ti, output_tokens: to } } }
+      }) + '\n'
+    // 同一累计被重放（rate-limit 重发场景）→ 只记一次；新响应累计变化 → 新事件
+    writeFileSync(f, ctx + tc(100, 20, 500, 80) + tc(100, 20, 500, 80) + tc(80, 10, 580, 90), 'utf8')
+
+    const adapter = new CodexAdapter({ roots: [join(dir, '.codex')] })
+    const [file] = adapter.discover()
+    const { events } = await adapter.readIncremental(file!, 0)
+    // 适配器层不去重（去重在存储主键）：3 条解析结果、2 个唯一 id（重复累计指纹相同）
+    expect(events).toHaveLength(3)
+    expect(new Set(events.map((e) => e.id)).size).toBe(2)
+    expect(events[0]!.id).toBe('codex:unknown-session:tc:500-80')
+    expect(events[0]!.model).toBe('gpt-5.2')
+    expect(events[0]!.tokens.input).toBe(100)
+    expect(events[0]!.tokens.output).toBe(20)
+    expect(events.some((e) => e.id === 'codex:unknown-session:tc:580-90')).toBe(true)
   })
 
   it('跨增量段恢复解析状态：新段没有 turn_context 也不丢模型', async () => {
@@ -276,6 +302,26 @@ describe('ZCodeAdapter', () => {
     const next = await adapter.readIncremental(files[0]!, first.endOffset)
     expect(next.events).toHaveLength(1)
     expect(next.events[0]!.id).toContain('lr-3')
+  })
+
+  it('discover 签名合并 -wal 文件（WAL 写入不更新主文件 mtime 时的增量触发）', async () => {
+    const dbPath = join(dir, 'zcode-wal', 'db.sqlite')
+    const db = buildDb(dbPath)
+    db.prepare(`INSERT INTO model_usage (session_id, logical_request_id, model_id, started_at, input_tokens, output_tokens)
+      VALUES ('zw','lr-1','GLM-5.3',100,10,2)`).run()
+    db.close() // journal_mode=delete：无 wal 文件
+    let adapter = new ZCodeAdapter({ dbPath })
+    const [f1] = adapter.discover()
+    expect(f1!.size).toBeGreaterThan(0)
+
+    // 模拟 WAL：主文件不变，出现 wal 文件 → 签名必须变化（mtime/size 任一）
+    const walPath = dbPath + '-wal'
+    const st = require('node:fs').statSync(dbPath)
+    require('node:fs').writeFileSync(walPath, Buffer.alloc(4096))
+    // 保留主文件 mtime 不变（writeFileSync wal 不触碰主文件）
+    require('node:fs').utimesSync(dbPath, st.atime, st.mtime)
+    const [f2] = adapter.discover()
+    expect(f2!.size).toBeGreaterThan(f1!.size) // size 合并了 wal
   })
 
   it('库重建（rowid 回退）时自动全量重扫', async () => {

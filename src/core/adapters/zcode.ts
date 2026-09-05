@@ -51,7 +51,18 @@ export class ZCodeAdapter implements SourceAdapter {
 
   discover(): DiscoveredFile[] {
     const st = statFile(this.dbPath)
-    return st ? [{ path: normalizePathKey(this.dbPath), size: st.size, mtimeMs: st.mtimeMs }] : []
+    if (!st) return []
+    // WAL 模式：新写入落在 -wal 文件，主 db 的 size/mtime 可能长时间不变
+    // （直到持有者 checkpoint）——签名必须合并 wal 的 size/mtime，否则增量永不触发，
+    // 数据延迟到 checkpoint 才进来。读取仍走主文件（readOnly 可见已提交的 WAL 内容）。
+    const wal = statFile(`${this.dbPath}-wal`)
+    return [
+      {
+        path: normalizePathKey(this.dbPath),
+        size: st.size + (wal?.size ?? 0),
+        mtimeMs: Math.max(st.mtimeMs, wal?.mtimeMs ?? 0)
+      }
+    ]
   }
 
   private openDb(): DatabaseSync {
