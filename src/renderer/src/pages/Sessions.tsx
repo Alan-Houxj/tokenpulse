@@ -13,16 +13,22 @@ const AGENT_OPTIONS: DropdownOption<string>[] = [
   { value: 'zcode', label: 'ZCode' }
 ]
 
-/** 会话明细：Agent / 模型筛选（日期在顶栏） */
+/** 会话明细：Agent / 模型筛选（日期在顶栏）；initialAgentFilter 供活动看板跳转联动 */
 export default function Sessions(props: {
   range: DateRange
   tickVersion: number
+  initialAgentFilter?: string
 }): React.JSX.Element {
   const [rows, setRows] = useState<SessionRow[] | null>(null)
   const [offset, setOffset] = useState(0)
   const [models, setModels] = useState<string[]>([])
-  const [agentFilter, setAgentFilter] = useState('')
+  const [agentFilter, setAgentFilter] = useState(props.initialAgentFilter ?? '')
   const [modelFilter, setModelFilter] = useState('')
+
+  // 活动看板跳转带来的筛选变化（组件已挂载时）
+  useEffect(() => {
+    if (props.initialAgentFilter != null) setAgentFilter(props.initialAgentFilter)
+  }, [props.initialAgentFilter])
 
   useEffect(() => {
     void window.api.getModels().then(setModels)

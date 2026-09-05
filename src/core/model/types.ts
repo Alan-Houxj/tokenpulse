@@ -152,3 +152,40 @@ export interface IngestResult {
   inserted: number
   skipped: number
 }
+
+/* ---------- 活动看板（Live Agent Dashboard） ---------- */
+
+export type LiveStatus = 'thinking' | 'waiting' | 'tool' | 'idle' | 'error'
+
+export interface LiveAgentCard {
+  agent: AgentId
+  sessionId: string
+  projectName: string
+  projectPath?: string
+  model?: string
+  status: LiveStatus
+  /** 动态动作描述（一句话，随最近日志变化） */
+  action: string
+  /** 当前任务起点（运行时长从此起算） */
+  taskStartTs: number
+  /** 最近任何活动的时间（异常判定的基准） */
+  lastActivityTs: number
+  /** 当前任务累计 token（前端按 rate 平滑递增） */
+  taskTokens: number
+  /** 平滑递增速率（tok/s，来自最近请求吞吐） */
+  rateTokensPerSec: number
+  /** 异常详情（非空即 error 态） */
+  anomaly?: string
+  /** 右键"查看日志文件"的目标 */
+  logFilePath?: string
+  /** 数据采集时刻（前端平滑递增的基准） */
+  polledAt: number
+}
+
+export interface LiveTimelineItem {
+  ts: number
+  model: string
+  tokens: number
+  costEstUSD: number
+  durationMs?: number
+}

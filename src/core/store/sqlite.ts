@@ -362,6 +362,60 @@ export class Store {
       .map((r) => String(r['model']))
   }
 
+  /** 活动看板兜底：近窗口内有事件的其他 Agent 会话 */
+  recentSessionsForLive(windowMs: number, now: number): {
+    agent: AgentId
+    sessionId: string
+    projectPath?: string
+    model: string
+    lastTs: number
+    tokens: number
+  }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT agent, session_id, MAX(ts) AS last_ts,
+           SUM(input_tokens+output_tokens+reasoning_tokens+cache_read_tokens+cache_write_tokens) AS tokens,
+           (SELECT model FROM events e2 WHERE e2.session_id = events.session_id ORDER BY e2.ts DESC LIMIT 1) AS model,
+           (SELECT project_path FROM events e3 WHERE e3.session_id = events.session_id AND e3.project_path IS NOT NULL LIMIT 1) AS project_path
+         FROM events WHERE ts >= ?
+         GROUP BY agent, session_id ORDER BY last_ts DESC LIMIT 20`
+      )
+      .all(now - windowMs)
+    return rows.map((r) => ({
+      agent: String(r['agent']) as AgentId,
+      sessionId: String(r['session_id']),
+      projectPath: r['project_path'] ? String(r['project_path']) : undefined,
+      model: String(r['model'] ?? 'unknown'),
+      lastTs: Number(r['last_ts']),
+      tokens: Number(r['tokens'] ?? 0)
+    }))
+  }
+
+  /** 侧滑面板：某会话最近 N 条请求（倒序时间轴） */
+  sessionTimeline(agent: string, sessionId: string, limit = 20): {
+    ts: number
+    model: string
+    tokens: number
+    costEstUSD: number
+    durationMs?: number
+  }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT ts, model, input_tokens+output_tokens+reasoning_tokens+cache_read_tokens+cache_write_tokens AS tokens,
+                cost_est_usd, duration_ms
+         FROM events WHERE agent = ? AND session_id = ?
+         ORDER BY ts DESC LIMIT ?`
+      )
+      .all(agent, sessionId, limit)
+    return rows.map((r) => ({
+      ts: Number(r['ts']),
+      model: String(r['model']),
+      tokens: Number(r['tokens']),
+      costEstUSD: Number(r['cost_est_usd'] ?? 0),
+      durationMs: r['duration_ms'] != null ? Number(r['duration_ms']) : undefined
+    }))
+  }
+
   /** 实时页：窗口期内有活动的会话 + 请求吞吐（Σtoken ÷ Σ请求耗时，无耗时数据为 null） */
   activeSessions(windowMs = 60 * 60_000, now = Date.now()): ActiveSessionRow[] {
     const since = now - windowMs

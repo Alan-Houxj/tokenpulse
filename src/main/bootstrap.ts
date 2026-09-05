@@ -2,7 +2,7 @@
  * 应用装配中枢：存储 + 配置 + 适配器 + 调度器 + IPC 数据通道。
  * 只在主进程运行；core 层保持零 Electron 依赖。
  */
-import { app, ipcMain, shell } from 'electron'
+import { app, clipboard, ipcMain, shell } from 'electron'
 import {
   Store,
   defaultDbPath,
@@ -13,6 +13,7 @@ import {
   loadConfig,
   saveConfig,
   effectivePriceTable,
+  collectLiveAgents,
   BUILTIN_PRICES,
   PRICES_VERSION
 } from '@core/index'
@@ -191,6 +192,21 @@ function registerDataIpc(userDataDir: string): void {
 
   ipcMain.handle('shell:openPath', (_e, p: { path: string }) => {
     void shell.openPath(String(p.path))
+    return true
+  })
+
+  // ---------- 活动看板 ----------
+  ipcMain.handle('live:agents', () => collectLiveAgents(store))
+  ipcMain.handle(
+    'live:timeline',
+    (_e, p: { agent: string; sessionId: string }) => store.sessionTimeline(p.agent, p.sessionId)
+  )
+  ipcMain.handle('live:showLog', (_e, p: { path: string }) => {
+    void shell.showItemInFolder(String(p.path))
+    return true
+  })
+  ipcMain.handle('live:copy', (_e, p: { text: string }) => {
+    clipboard.writeText(String(p.text))
     return true
   })
 }

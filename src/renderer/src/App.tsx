@@ -7,15 +7,17 @@ import Onboarding from './components/Onboarding'
 import Overview from './pages/Overview'
 import Trend from './pages/Trend'
 import Sessions from './pages/Sessions'
+import LiveBoard from './pages/LiveBoard'
 import Sources from './pages/Sources'
 import Settings from './pages/Settings'
 
-type Page = 'overview' | 'trend' | 'sessions' | 'sources' | 'settings'
+type Page = 'overview' | 'trend' | 'sessions' | 'live' | 'sources' | 'settings'
 
 const NAV: { id: Page; label: string }[] = [
   { id: 'overview', label: '总览' },
   { id: 'trend', label: '趋势' },
   { id: 'sessions', label: '会话' },
+  { id: 'live', label: '活动看板' },
   { id: 'sources', label: '数据源' },
   { id: 'settings', label: '设置' }
 ]
@@ -26,6 +28,8 @@ export default function App(): React.JSX.Element {
   const [lastTick, setLastTick] = useState<TickSummary | undefined>()
   const [tickVersion, setTickVersion] = useState(0)
   const [range, setRange] = useState<DateRange>(() => rangeFromPreset('today'))
+  // 活动看板 → 会话页的 Agent 筛选联动
+  const [sessionAgentFilter, setSessionAgentFilter] = useState('')
 
   useEffect(() => {
     void window.api.getConfig().then((c) => setOnboarded(c.onboarded))
@@ -76,7 +80,22 @@ export default function App(): React.JSX.Element {
       <main className="content">
         {page === 'overview' && <Overview range={range} tickVersion={tickVersion} />}
         {page === 'trend' && <Trend range={range} tickVersion={tickVersion} />}
-        {page === 'sessions' && <Sessions range={range} tickVersion={tickVersion} />}
+        {page === 'sessions' && (
+          <Sessions
+            range={range}
+            tickVersion={tickVersion}
+            initialAgentFilter={sessionAgentFilter}
+          />
+        )}
+        {page === 'live' && (
+          <LiveBoard
+            tickVersion={tickVersion}
+            onJumpToSessions={(agent) => {
+              setSessionAgentFilter(agent)
+              setPage('sessions')
+            }}
+          />
+        )}
         {page === 'sources' && <Sources />}
         {page === 'settings' && <Settings onReplayOnboarding={() => setOnboarded(false)} />}
       </main>

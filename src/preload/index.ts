@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   ActiveSessionRow,
   AgentId,
+  LiveAgentCard,
+  LiveTimelineItem,
   OverviewSummary,
   ProbeResult,
   SessionRow,
@@ -69,7 +71,14 @@ const api = {
   },
 
   minimizeWindow: (): void => ipcRenderer.send('win:minimize'),
-  hideWindow: (): void => ipcRenderer.send('win:hide')
+  hideWindow: (): void => ipcRenderer.send('win:hide'),
+
+  getLiveAgents: (): Promise<LiveAgentCard[]> => ipcRenderer.invoke('live:agents'),
+  getLiveTimeline: (agent: string, sessionId: string): Promise<LiveTimelineItem[]> =>
+    ipcRenderer.invoke('live:timeline', { agent, sessionId }),
+  showLogInFolder: (path: string): Promise<boolean> =>
+    ipcRenderer.invoke('live:showLog', { path }),
+  copyText: (text: string): Promise<boolean> => ipcRenderer.invoke('live:copy', { text })
 }
 
 export type AgentMeterApi = typeof api
