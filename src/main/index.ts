@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, Tray } from 'electron'
 import { join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
-import { createAppIcon } from './trayIcon'
+import { createTrayIcon } from './trayIcon'
 import { bindTray, updateTrayNow } from './trayUpdater'
 import { bootstrap, compactTokens } from './bootstrap'
 
@@ -83,7 +83,7 @@ function showMainWindow(): void {
 }
 
 function createTray(): Tray {
-  const t = new Tray(createAppIcon(16))
+  const t = new Tray(createTrayIcon(16))
   t.setToolTip('TokenPulse')
   t.setContextMenu(
     Menu.buildFromTemplate([

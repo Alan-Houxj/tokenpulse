@@ -1,9 +1,9 @@
 import { nativeImage, type NativeImage } from 'electron'
 
 /**
- * 托盘图标生成器。
- * 不带任何图像依赖：直接在 RGBA 缓冲区上绘制（圆角底 + 5x7 位图字体数字），
- * 由 nativeImage.createFromBuffer 转 Electron 图标。M4 会用它画"今日 token 档位"。
+ * 托盘图标：与应用图标/顶栏 Logo 一致的脉冲波形（蓝底圆角方块 + 白色心电折线）。
+ * 不带图像依赖：直接在 RGBA 缓冲区上绘制，4 倍超采样后降采样抗锯齿。
+ * 几何与 build/gen-icon.mjs 共用同一组 WAVE_20 点集，想改形状两边同步改。
  */
 
 interface Rgba {
@@ -13,27 +13,19 @@ interface Rgba {
   a?: number
 }
 
-const BG: Rgba = { r: 59, g: 130, b: 246 } // blue-500（应用强调色）
-const BG_DARK: Rgba = { r: 37, g: 99, b: 235 } // blue-600
-const FG: Rgba = { r: 238, g: 242, b: 247 } // 亮字（暗底蓝上对比更好）
+const BG: Rgba = { r: 59, g: 130, b: 246 } // blue-500（品牌蓝）
+const FG: Rgba = { r: 240, g: 244, b: 250 } // 波形白
 
-// 5x7 位图字体，行用 5 位二进制表示（MSB 在左）
-const FONT_5X7: Record<string, number[]> = {
-  '0': [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
-  '1': [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-  '2': [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111],
-  '3': [0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110],
-  '4': [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
-  '5': [0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110],
-  '6': [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
-  '7': [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
-  '8': [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
-  '9': [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100],
-  k: [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
-  M: [0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
-  '+': [0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000],
-  ' ': [0, 0, 0, 0, 0, 0, 0]
-}
+// 脉冲波形点集（TitleBar Logo 的 20x20 viewBox 坐标）
+const WAVE_20 = [
+  [1, 10.5],
+  [4.2, 10.5],
+  [6.2, 4.3],
+  [9.4, 16.3],
+  [11.8, 8.3],
+  [13.4, 11.7],
+  [18.4, 11.7]
+] as const
 
 class PixelBuffer {
   readonly data: Buffer
@@ -71,22 +63,26 @@ class PixelBuffer {
       }
     }
   }
-  drawText(text: string, color: Rgba, scale: number, offsetX: number, offsetY: number, gap = scale): void {
-    let cx = offsetX
-    for (const ch of text) {
-      const glyph = FONT_5X7[ch] ?? FONT_5X7[' ']!
-      for (let gy = 0; gy < 7; gy++) {
-        for (let gx = 0; gx < 5; gx++) {
-          if (glyph[gy]! & (1 << (4 - gx))) {
-            for (let sy = 0; sy < scale; sy++) {
-              for (let sx = 0; sx < scale; sx++) {
-                this.set(cx + gx * scale + sx, offsetY + gy * scale + sy, color)
-              }
-            }
-          }
-        }
+  strokeQuad(q: [number, number][], color: Rgba): void {
+    const xs = q.map((p) => p[0])
+    const ys = q.map((p) => p[1])
+    const minX = Math.floor(Math.min(...xs)) - 1
+    const maxX = Math.ceil(Math.max(...xs)) + 1
+    const minY = Math.floor(Math.min(...ys)) - 1
+    const maxY = Math.ceil(Math.max(...ys)) + 1
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        if (x < 0 || y < 0 || x >= this.width || y >= this.height) continue
+        if (pointInQuad(x + 0.5, y + 0.5, q)) this.set(x, y, color)
       }
-      cx += 5 * scale + gap
+    }
+  }
+  disc(cx: number, cy: number, r: number, color: Rgba): void {
+    for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) {
+      for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
+        if (x < 0 || y < 0 || x >= this.width || y >= this.height) continue
+        if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) this.set(x, y, color)
+      }
     }
   }
   toNativeImage(): NativeImage {
@@ -104,32 +100,82 @@ class PixelBuffer {
   }
 }
 
-/** 静态应用图标（M0 占位，M4 换成带数字的动态图标） */
-export function createAppIcon(size = 16): NativeImage {
-  const buf = new PixelBuffer(size, size)
-  buf.fillRounded(BG, Math.max(2, Math.floor(size / 5)))
-  // 左上到右下的斜杠纹理，让图标在浅色/深色任务栏都可辨
-  const dark = BG_DARK
-  for (let i = 0; i < size; i++) {
-    const d = (i * 2) % size
-    buf.set(d, i, dark)
+function pointInQuad(px: number, py: number, q: [number, number][]): boolean {
+  let inside = false
+  for (let i = 0, j = 3; i < 4; j = i++) {
+    const [xi, yi] = q[i]!
+    const [xj, yj] = q[j]!
+    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside
   }
-  return buf.toNativeImage()
+  return inside
 }
 
 /**
- * 带文本的托盘图标（M4 用于显示今日 token 档位，如 "12M"）。
- * text 建议不超过 3 字符。
+ * 托盘脉冲波形图标。size 为最终逻辑尺寸（Windows 托盘为 16），
+ * 内部以 SS 倍超采样绘制再平均降采样，避免小尺寸锯齿。
  */
-export function createTrayLabelIcon(text: string, size = 16): NativeImage {
-  const buf = new PixelBuffer(size, size)
-  buf.fillRounded(BG, Math.max(2, Math.floor(size / 5)))
-  const scale = text.length >= 3 ? 1 : 2
-  // 3 字符按默认间距宽 17px 超出 16px 画布会裁掉首字符左半，压成 0 间距（15px）
-  const gap = text.length >= 3 ? 0 : scale
-  const textW = text.length * 5 * scale + (text.length - 1) * gap
-  const offX = Math.floor((size - textW) / 2)
-  const offY = Math.floor((size - 7 * scale) / 2)
-  buf.drawText(text, FG, scale, offX, offY, gap)
-  return buf.toNativeImage()
+export function createTrayIcon(size = 16): NativeImage {
+  const SS = 4
+  const big = size * SS
+  const buf = new PixelBuffer(big, big)
+  const radius = Math.max(2, Math.round(size / 5)) * SS
+  buf.fillRounded(BG, radius)
+
+  // 波形映射：水平留 1px 边距，纵向居中（与 gen-icon.mjs 同法）
+  const pad = SS
+  const scale = (big - pad * 2) / 19.4
+  const raw: [number, number][] = WAVE_20.map(([x, y]) => [pad + (x - 1) * scale, y * scale])
+  const yMin = Math.min(...raw.map((p) => p[1]))
+  const yMax = Math.max(...raw.map((p) => p[1]))
+  const yShift = big / 2 - (yMin + yMax) / 2
+  const pts = raw.map(([x, y]) => [x, y + yShift] as [number, number])
+  const lw = Math.max(2, Math.round(size / 7)) * SS // 16px 下线宽 2px
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const [x1, y1] = pts[i]!
+    const [x2, y2] = pts[i + 1]!
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const len = Math.hypot(dx, dy) || 1
+    const nx = (-dy / len) * (lw / 2)
+    const ny = (dx / len) * (lw / 2)
+    buf.strokeQuad(
+      [
+        [x1 + nx, y1 + ny],
+        [x2 + nx, y2 + ny],
+        [x2 - nx, y2 - ny],
+        [x1 - nx, y1 - ny]
+      ],
+      FG
+    )
+    buf.disc(x1, y1, lw / 2, FG)
+    if (i === pts.length - 2) buf.disc(x2, y2, lw / 2, FG)
+  }
+
+  // SS×SS 块平均降采样（含 alpha 加权）
+  const out = new PixelBuffer(size, size)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let r = 0
+      let g = 0
+      let b = 0
+      let a = 0
+      for (let sy = 0; sy < SS; sy++) {
+        for (let sx = 0; sx < SS; sx++) {
+          const i = ((y * SS + sy) * big + (x * SS + sx)) * 4
+          const pa = buf.data[i + 3]! / 255
+          r += buf.data[i]! * pa
+          g += buf.data[i + 1]! * pa
+          b += buf.data[i + 2]! * pa
+          a += pa
+        }
+      }
+      if (a > 0) {
+        out.data.set(
+          [Math.round(r / a), Math.round(g / a), Math.round(b / a), Math.round((a / (SS * SS)) * 255)],
+          (y * size + x) * 4
+        )
+      }
+    }
+  }
+  return out.toNativeImage()
 }
