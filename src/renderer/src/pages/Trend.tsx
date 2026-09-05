@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Bar,
   BarChart,
+  Brush,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip as ReTooltip,
@@ -52,14 +53,28 @@ export default function Trend(props: {
     })
 
   const modelData = useMemo(() => {
-    const buckets = new Map<number, Record<string, number | string>>()
+    // 补零桶：时间轴完整覆盖整个区间（无活动的天也占位），
+    // 否则"近 30 天只有 8 天有数据"时图上只有 8 根柱
+    const rows: Record<string, number | string>[] = []
+    const byBucket = new Map<number, Record<string, number | string>>()
     const ensure = (ts: number): Record<string, number | string> => {
-      let row = buckets.get(ts)
+      let row = byBucket.get(ts)
       if (!row) {
         row = { label: bucketLabel(ts) }
-        buckets.set(ts, row)
+        byBucket.set(ts, row)
+        rows.push(row)
       }
       return row
+    }
+    // 生成本地时区对齐的完整桶序列（按日历步进，避免 DST 偏移）
+    const step = bucket === 'hour' ? 3_600_000 : 86_400_000
+    const cursor = new Date(props.range.from)
+    if (bucket === 'hour') cursor.setMinutes(0, 0, 0)
+    else cursor.setHours(0, 0, 0, 0)
+    while (cursor.getTime() < props.range.to) {
+      ensure(cursor.getTime())
+      if (bucket === 'day') cursor.setDate(cursor.getDate() + 1)
+      else cursor.setTime(cursor.getTime() + step)
     }
     for (const p of byModel) {
       const row = ensure(p.bucketStart)
@@ -67,8 +82,8 @@ export default function Trend(props: {
         row[p.model] = Number(row[p.model] ?? 0) + p.total
       }
     }
-    return [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([, row]) => row)
-  }, [byModel, effectiveEnabled])
+    return rows
+  }, [byModel, effectiveEnabled, bucket, props.range])
 
   const total = byModel.filter((p) => effectiveEnabled.has(p.model)).reduce((s, p) => s + p.total, 0)
   const cost = byModel.filter((p) => effectiveEnabled.has(p.model)).reduce((s, p) => s + p.costEstUSD, 0)
@@ -177,6 +192,17 @@ export default function Trend(props: {
                       />
                     )
                   })}
+                {/* 拖拽窗口：默认全选，可左右拉动聚焦区间 */}
+                {modelData.length > 12 && (
+                  <Brush
+                    dataKey="label"
+                    height={22}
+                    travellerWidth={8}
+                    stroke="#5b8cff"
+                    fill="rgba(255,255,255,0.03)"
+                    tickFormatter={() => ''}
+                  />
+                )}
               </BarChart>
             </ResponsiveContainer>
           </div>

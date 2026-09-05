@@ -278,13 +278,14 @@ body,
   flex-wrap: wrap;
 }
 
-/* 卡片：20px 24px 内边距、12px 圆角、16px 间距 */
+/* 卡片：20px 24px 内边距、12px 圆角、16px 间距；表格超宽时在卡片内横向滚动不外溢 */
 .panel {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 20px 24px;
   margin-bottom: 16px;
+  overflow-x: auto;
 }
 
 .panel h3 {
@@ -296,19 +297,20 @@ body,
 }
 
 /* ---------- 大数字卡片 ---------- */
+/* 响应式卡片网格：窄窗自动降列 */
 .stat-cards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
   margin-bottom: 16px;
 }
 
 .stat-cards.two {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .stat-cards:not(.two) {
-  grid-template-columns: minmax(280px, 400px) 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 400px));
 }
 
 .stat-card {
@@ -622,6 +624,8 @@ tr.overridden td {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-pop);
   animation: dropdown-in 0.12s ease;
+  max-width: calc(100vw - 40px);
+  overflow-x: auto; /* 窄窗时双日历可横向滚动 */
 }
 
 .drp-mode {
@@ -816,6 +820,13 @@ tr.overridden td {
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   cursor: pointer;
+  max-width: 220px; /* 长模型名截断 */
+}
+
+.model-chip > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .model-chip.on {
@@ -1478,7 +1489,7 @@ tr.row-disabled td:first-child {
   top: 48px; /* 顶栏下方 */
   right: 0;
   bottom: 0;
-  width: 400px;
+  width: min(400px, 92vw); /* 窄窗不超屏 */
   z-index: 71;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
