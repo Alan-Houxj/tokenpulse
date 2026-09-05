@@ -152,6 +152,8 @@ function zcodeSessionCard(db: DatabaseSync, sid: string, now: number): LiveAgent
   const rateTokensPerSec = durMs > 0 ? Math.round(Number(agg?.dur_tokens ?? 0) / (durMs / 1000)) : 0
 
   // ---- 状态机 ----
+  // 异常只对应「挂着未完成的东西超时」：请求未返回 / 工具卡死 / 明确报错。
+  // 任务完成后人离开（无论多久没动静）都是空闲，不是异常。
   let status: LiveStatus
   let action: string
   let anomaly: string | undefined
@@ -172,26 +174,29 @@ function zcodeSessionCard(db: DatabaseSync, sid: string, now: number): LiveAgent
     anomaly = `工具 ${lastTool.tool_name} 失败：${lastTool.error_message ?? lastTool.error_type}`
     action = `异常：${anomaly}`
   } else if (runningTool?.started_at != null) {
-    status = 'tool'
-    action = `调用 ${runningTool.tool_name ?? '工具'} · 已运行 ${secSince(runningTool.started_at)} 秒`
+    if (now - runningTool.started_at > STALE_AFTER_MS) {
+      status = 'error'
+      anomaly = `工具 ${runningTool.tool_name} 运行超过 ${minSince(runningTool.started_at)} 分钟未返回`
+      action = `异常：${anomaly}`
+    } else {
+      status = 'tool'
+      action = `调用 ${runningTool.tool_name ?? '工具'} · 已运行 ${secSince(runningTool.started_at)} 秒`
+    }
   } else if (mu?.started_at != null && mu.completed_at == null) {
-    if (mu.first_token_at == null) {
+    if (now - mu.started_at > STALE_AFTER_MS) {
+      status = 'error'
+      anomaly = `请求超过 ${minSince(mu.started_at)} 分钟未响应（可能已挂起）`
+      action = `异常：${anomaly}`
+    } else if (mu.first_token_at == null) {
       status = 'waiting'
       action = `等待 ${model ?? '模型'} 响应...（已等待 ${secSince(mu.started_at)} 秒）`
     } else {
       status = 'thinking'
       action = `生成回复中...（${secSince(mu.started_at)} 秒）`
     }
-  } else if (now - lastActivityTs > STALE_AFTER_MS && now - lastActivityTs < ACTIVITY_WINDOW_MS && lastActivityTs > 0) {
-    // 有历史活动但长时间无响应（非空闲收尾态）→ 异常
-    status = 'error'
-    anomaly = `超过 ${minSince(lastActivityTs)} 分钟无响应`
-    action = `异常：${anomaly}`
   } else if (now - lastActivityTs <= IDLE_AFTER_MS && mu?.completed_at != null) {
     status = 'thinking'
-    action = lastUser
-      ? `处理请求：${lastUser.text}`
-      : '生成回复中...'
+    action = lastUser ? `处理请求：${lastUser.text}` : '生成回复中...'
   } else {
     status = 'idle'
     action = `空闲 · 最后活动 ${minSince(lastActivityTs)} 分钟前`

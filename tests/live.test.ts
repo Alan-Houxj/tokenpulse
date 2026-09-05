@@ -96,6 +96,39 @@ describe('ZCode 状态推断', () => {
     expect(card.action).toContain('最后活动')
     db.close()
   })
+
+  it('任务完成后长时间无活动（>5 分钟）→ 空闲而非异常', () => {
+    const db = buildZcodeDb(join(dir, 'z', 'db.sqlite'))
+    const now = Date.now()
+    db.prepare(`INSERT INTO model_usage (session_id, model_id, started_at, completed_at, status, input_tokens, output_tokens)
+      VALUES ('s1','GLM-5.3',?,?,'completed',1000,50)`).run(now - 40 * 60_000, now - 38 * 60_000)
+    const card = __internals.zcodeSessionCard(db, 's1', now) as LiveAgentCard
+    expect(card.status).toBe('idle')
+    expect(card.anomaly).toBeUndefined()
+    db.close()
+  })
+
+  it('进行中请求超过 5 分钟未返回 → 异常（挂起）', () => {
+    const db = buildZcodeDb(join(dir, 'z', 'db.sqlite'))
+    const now = Date.now()
+    db.prepare(`INSERT INTO model_usage (session_id, model_id, started_at, status, input_tokens, output_tokens)
+      VALUES ('s1','GLM-5.3',?,NULL,0,0)`).run(now - 8 * 60_000)
+    const card = __internals.zcodeSessionCard(db, 's1', now) as LiveAgentCard
+    expect(card.status).toBe('error')
+    expect(card.anomaly).toContain('未响应')
+    db.close()
+  })
+
+  it('running 工具超过 5 分钟 → 异常（卡死）', () => {
+    const db = buildZcodeDb(join(dir, 'z', 'db.sqlite'))
+    const now = Date.now()
+    db.prepare(`INSERT INTO tool_usage (session_id, tool_name, started_at, status)
+      VALUES ('s1','Bash',?,'running')`).run(now - 7 * 60_000)
+    const card = __internals.zcodeSessionCard(db, 's1', now) as LiveAgentCard
+    expect(card.status).toBe('error')
+    expect(card.anomaly).toContain('未返回')
+    db.close()
+  })
 })
 
 describe('Codex 尾部解析', () => {
