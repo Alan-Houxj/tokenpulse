@@ -107,16 +107,10 @@ export default function LiveBoard(props: {
     return groups.filter((g) => (filter === 'running' ? isRunning(g.status) : g.status === filter))
   }, [groups, filter])
 
-  const runningAgents = groups.filter((g) => isRunning(g.status)).length
-  const totalSessions = cards?.length ?? 0
-
   return (
     <div className="page live-page">
       <header className="live-head">
         <h1 className="live-title">Agent 实时看板</h1>
-        <span className="live-count">
-          {groups.length} 种 Agent · {totalSessions} 个会话 · {runningAgents} 个运行中
-        </span>
       </header>
 
       <div className="live-filters">

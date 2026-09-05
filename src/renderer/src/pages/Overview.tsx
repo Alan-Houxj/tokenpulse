@@ -53,7 +53,8 @@ export default function Overview(props: {
                   />
                 </div>
                 <span className="agent-val">
-                  {formatTokens(a.totals.total)} · {formatUSD(a.totals.costEstUSD)}
+                  <strong>{formatTokens(a.totals.total)}</strong>
+                  <span className="agent-val-cost"> · {formatUSD(a.totals.costEstUSD)}</span>
                 </span>
               </div>
             ))}
