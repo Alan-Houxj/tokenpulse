@@ -37,9 +37,19 @@ export default function LiveBoard(props: {
   // 1 秒本地节拍：时长与 token 平滑递增（不等 5 秒轮询跳变）
   const [nowTick, setNowTick] = useState(() => Date.now())
   const boardRef = useRef<HTMLDivElement>(null)
+  // 累计 token 单调保持：外推重置若低于已显示值则不回退（累计语义只涨不减）；
+  // 任务切换（taskStart 变化）时重置归零
+  const shownTokensRef = useRef(new Map<string, { taskStart: number; tokens: number }>())
 
   useEffect(() => {
-    void window.api.getLiveAgents().then(setCards)
+    void window.api.getLiveAgents().then((next) => {
+      // 清理已消失卡片的记录，防止 Map 无限增长
+      const liveKeys = new Set(next.map((c) => `${c.agent}:${c.sessionId}`))
+      for (const k of shownTokensRef.current.keys()) {
+        if (!liveKeys.has(k)) shownTokensRef.current.delete(k)
+      }
+      setCards(next)
+    })
   }, [props.tickVersion])
 
   useEffect(() => {
@@ -134,6 +144,7 @@ export default function LiveBoard(props: {
                     key={`${c.agent}:${c.sessionId}`}
                     card={c}
                     now={nowTick}
+                    shownTokensRef={shownTokensRef.current}
                     onClick={() => setSelected(c)}
                     onContextMenu={(x, y) => setCtxMenu({ x, y, card: c })}
                   />
@@ -197,6 +208,7 @@ export default function LiveBoard(props: {
 function AgentCard(props: {
   card: LiveAgentCard
   now: number
+  shownTokensRef: Map<string, { taskStart: number; tokens: number }>
   onClick: () => void
   onContextMenu: (x: number, y: number) => void
 }): React.JSX.Element {
@@ -204,7 +216,15 @@ function AgentCard(props: {
   const meta = STATUS_META[c.status]
   // 平滑递增：时长 = now - 任务起点；token = 采集值 + 速率 × 经过时间
   const elapsedMs = Math.max(0, props.now - c.taskStartTs)
-  const smoothTokens = c.taskTokens + Math.round((c.rateTokensPerSec * (props.now - c.polledAt)) / 1000)
+  const key = `${c.agent}:${c.sessionId}`
+  const computed =
+    c.taskTokens + Math.round((c.rateTokensPerSec * Math.max(0, props.now - c.polledAt)) / 1000)
+  // 单调保持（任务内）：轮询重置值低于已显示值时不回退；新任务（起点变化）归零重计
+  const prev = props.shownTokensRef.get(key)
+  const inSameTask = prev != null && prev.taskStart === c.taskStartTs
+  const shown = inSameTask ? Math.max(computed, prev.tokens) : computed
+  props.shownTokensRef.set(key, { taskStart: c.taskStartTs, tokens: shown })
+  const smoothTokens = shown
   const showProgress = c.status === 'thinking' || c.status === 'waiting' || c.status === 'tool'
 
   return (
