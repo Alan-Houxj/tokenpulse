@@ -26,7 +26,7 @@ export async function probeAdapter(adapter: SourceAdapter): Promise<ProbeResult>
   }
 
   if (!existingRoot) {
-    return { ...base, status: 'absent', detail: '未找到数据目录' }
+    return { ...base, status: 'absent', detail: `未找到数据目录 ${roots[0]}` }
   }
 
   let files
