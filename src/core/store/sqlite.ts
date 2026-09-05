@@ -58,18 +58,6 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 `
 
-interface TotalsRow {
-  total_tokens: number
-  input_tokens: number
-  output_tokens: number
-  reasoning_tokens: number
-  cache_read_tokens: number
-  cache_write_tokens: number
-  cost_usd: number
-  cost_est_usd: number
-  event_count: number
-}
-
 function toTotals(r: Record<string, unknown> | undefined): TokenTotals {
   if (!r) {
     return {
@@ -549,15 +537,9 @@ export class Store {
     const v = r?.['m']
     return v == null ? undefined : Number(v)
   }
-
-  dbPath(): string {
-    return (this.db as unknown as { db?: { name?: string } }).db?.name ?? ''
-  }
 }
 
 /** 解析我们自己的库文件默认路径（不依赖 Electron，测试可用） */
 export function defaultDbPath(userDataDir: string): string {
   return resolve(userDataDir, 'agentmeter.db')
 }
-
-export type { TotalsRow }

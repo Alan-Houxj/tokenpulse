@@ -1,4 +1,3 @@
-export * from './meta'
 export * from './model/types'
 export { Store, defaultDbPath, agentDisplayName } from './store/sqlite'
 export type { DbDriver } from './store/dbDriver'

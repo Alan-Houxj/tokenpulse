@@ -22,26 +22,10 @@ export function formatTs(ts: number | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export function formatDuration(ms: number | undefined): string {
-  if (ms == null) return '—'
-  if (ms < 60_000) return `${Math.round(ms / 1000)}s`
-  if (ms < 3_600_000) return `${(ms / 60_000).toFixed(1)}m`
-  return `${(ms / 3_600_000).toFixed(1)}h`
-}
-
 export function formatBytes(n: number | undefined): string {
   if (n == null) return '—'
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)}GB`
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}MB`
   if (n >= 1e3) return `${(n / 1e3).toFixed(0)}KB`
   return `${n}B`
-}
-
-/** 相对现在的时间差（"3 分钟前"） */
-export function timeAgo(ts: number): string {
-  const diff = Date.now() - ts
-  if (diff < 60_000) return `${Math.max(1, Math.round(diff / 1000))} 秒前`
-  if (diff < 3_600_000) return `${Math.round(diff / 60_000)} 分钟前`
-  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)} 小时前`
-  return `${Math.round(diff / 86_400_000)} 天前`
 }
