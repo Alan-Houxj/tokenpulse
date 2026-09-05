@@ -1,8 +1,8 @@
-import type { AgentMeterApi } from './index'
+import type { TokenPulseApi } from './index'
 
 declare global {
   interface Window {
-    api: AgentMeterApi
+    api: TokenPulseApi
   }
 }
 

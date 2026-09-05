@@ -27,7 +27,7 @@ export default function Onboarding(props: { onDone: () => void }): React.JSX.Ele
     <div className="overlay">
       <div className="onboarding">
         <h1>
-          <span className="brand-dot" aria-hidden /> AgentMeter
+          <span className="brand-dot" aria-hidden /> TokenPulse
         </h1>
         <p className="subtitle">本地 · 零配置 · 多 Agent token 监控</p>
 

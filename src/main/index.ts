@@ -1,8 +1,31 @@
 import { app, BrowserWindow, ipcMain, Menu, Tray } from 'electron'
 import { join } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { createAppIcon } from './trayIcon'
 import { bindTray, updateTrayNow } from './trayUpdater'
 import { bootstrap, compactTokens } from './bootstrap'
+
+/**
+ * 品牌迁移：productName 由 AgentMeter 改为 TokenPulse 后，Electron 的 userData
+ * 目录随之改变（%APPDATA%\TokenPulse）。首次运行新版本时把旧目录
+ * %APPDATA%\AgentMeter 里的数据库与配置复制过来（旧目录保留不动，安全回退）。
+ */
+function migrateOldUserData(): void {
+  const newData = app.getPath('userData')
+  const oldData = join(app.getPath('appData'), 'AgentMeter') // 旧品牌目录名（迁移源，勿随品牌替换）
+  const hasOwnData = existsSync(join(newData, 'agentmeter.db')) || existsSync(join(newData, 'config.json'))
+  if (hasOwnData || !existsSync(oldData)) return
+  try {
+    mkdirSync(newData, { recursive: true })
+    for (const f of ['agentmeter.db', 'agentmeter.db-wal', 'agentmeter.db-shm', 'config.json']) {
+      const src = join(oldData, f)
+      if (existsSync(src)) copyFileSync(src, join(newData, f))
+    }
+    console.log('[tokenpulse] 已从旧版 AgentMeter 目录迁移历史数据')
+  } catch (e) {
+    console.warn('[tokenpulse] 旧数据迁移失败（将以全新状态启动）:', e)
+  }
+}
 
 // 全局引用防止被 GC（Electron 常见坑：局部变量托盘会消失）
 let mainWindow: BrowserWindow | null = null
@@ -18,7 +41,7 @@ function createMainWindow(): BrowserWindow {
     minHeight: 620,
     show: false,
     autoHideMenuBar: true,
-    title: 'AgentMeter',
+    title: 'TokenPulse',
     // 无边框：自定义标题栏由渲染端 TitleBar 提供（品牌 + 拖拽区 + 窗口控制）
     frame: false,
     backgroundColor: '#0a0a0f',
@@ -61,7 +84,7 @@ function showMainWindow(): void {
 
 function createTray(): Tray {
   const t = new Tray(createAppIcon(16))
-  t.setToolTip('AgentMeter')
+  t.setToolTip('TokenPulse')
   t.setContextMenu(
     Menu.buildFromTemplate([
       { label: '打开仪表盘', click: () => showMainWindow() },
@@ -91,6 +114,7 @@ if (!gotLock) {
   app.on('second-instance', () => showMainWindow())
 
   void app.whenReady().then(() => {
+    migrateOldUserData()
     bootstrap()
 
     mainWindow = createMainWindow()
@@ -111,7 +135,7 @@ if (!gotLock) {
 function trayFallbackText(): { label: string; tooltip: string } {
   return {
     label: compactTokens(0),
-    tooltip: 'AgentMeter 正在回填历史数据…'
+    tooltip: 'TokenPulse 正在回填历史数据…'
   }
 }
 

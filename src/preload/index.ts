@@ -10,7 +10,7 @@ import type {
   TrendPoint,
   TrendPointByModel
 } from '@core/model/types'
-import type { AgentMeterConfig } from '@core/config'
+import type { TokenPulseConfig } from '@core/config'
 import type { TickSummary } from '@core/engine/scheduler'
 import type { PriceOverrides } from '@core/engine/cost'
 
@@ -52,13 +52,13 @@ const api = {
   getStats: (): Promise<{ eventCount: number; firstTs?: number; lastTs?: number }> =>
     ipcRenderer.invoke('data:stats'),
 
-  getConfig: (): Promise<AgentMeterConfig> => ipcRenderer.invoke('config:get'),
+  getConfig: (): Promise<TokenPulseConfig> => ipcRenderer.invoke('config:get'),
   setConfig: (patch: {
     pollIntervalMs?: number
     priceOverrides?: PriceOverrides
-    roots?: AgentMeterConfig['roots']
+    roots?: TokenPulseConfig['roots']
     onboarded?: boolean
-  }): Promise<AgentMeterConfig> => ipcRenderer.invoke('config:set', patch),
+  }): Promise<TokenPulseConfig> => ipcRenderer.invoke('config:set', patch),
   getBuiltinPrices: (): Promise<Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>> =>
     ipcRenderer.invoke('prices:builtin'),
   completeOnboarding: (): Promise<boolean> => ipcRenderer.invoke('onboarding:complete'),
@@ -81,5 +81,5 @@ const api = {
   copyText: (text: string): Promise<boolean> => ipcRenderer.invoke('live:copy', { text })
 }
 
-export type AgentMeterApi = typeof api
+export type TokenPulseApi = typeof api
 contextBridge.exposeInMainWorld('api', api)

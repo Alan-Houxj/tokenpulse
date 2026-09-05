@@ -22,12 +22,12 @@ import { ClaudeCodeAdapter } from '@core/adapters/claude-code'
 import { CodexAdapter } from '@core/adapters/codex'
 import { createGeminiAdapter, createQwenAdapter } from '@core/adapters/gemini-like'
 import { ZCodeAdapter } from '@core/adapters/zcode'
-import type { AgentId, AgentMeterConfig, ProbeResult, SourceAdapter } from '@core/index'
+import type { AgentId, TokenPulseConfig, ProbeResult, SourceAdapter } from '@core/index'
 import { broadcast } from './events'
 import { updateTrayNow } from './trayUpdater'
 
 let store: Store
-let config: AgentMeterConfig
+let config: TokenPulseConfig
 let scheduler: UsageScheduler
 let firstTickLogged = false
 
@@ -41,27 +41,27 @@ export function bootstrap(): void {
   if (store.getMeta('prices_version') !== String(PRICES_VERSION)) {
     const n = store.recomputeCosts(effectivePriceTable(config.priceOverrides))
     store.setMeta('prices_version', String(PRICES_VERSION))
-    if (n > 0) console.log(`[agentmeter] 价格表更新，已重算 ${n} 条历史事件的估算成本`)
+    if (n > 0) console.log(`[tokenpulse] 价格表更新，已重算 ${n} 条历史事件的估算成本`)
   }
 
   // 数据口径修正 v2：ZCode input 含缓存读的历史事件拆分 + 成本重算
   if (store.getMeta('data_version') !== '2' && store.getMeta('data_version') !== '3') {
     const n = store.migrateZcodeInputV2()
     store.recomputeCosts(effectivePriceTable(config.priceOverrides))
-    if (n > 0) console.log(`[agentmeter] 已修正 ${n} 条 ZCode 历史事件的输入口径（缓存双计）`)
+    if (n > 0) console.log(`[tokenpulse] 已修正 ${n} 条 ZCode 历史事件的输入口径（缓存双计）`)
   }
 
   // 迁移 v3：清除 unknown 模型事件（增量状态丢失 bug 的存量），重置位点重新回填
   if (store.getMeta('data_version') !== '3') {
     const { removedEvents } = store.migrateUnknownModelsV3()
     store.setMeta('data_version', '3')
-    if (removedEvents > 0) console.log(`[agentmeter] 已清理 ${removedEvents} 条 unknown 模型事件，将重新回填`)
+    if (removedEvents > 0) console.log(`[tokenpulse] 已清理 ${removedEvents} 条 unknown 模型事件，将重新回填`)
   }
 
   // 迁移 v4：ZCode 项目路径 JOIN 列名修复，重采带回 project_path
   if (store.getMeta('data_version') !== '4' && store.getMeta('data_version') !== '5') {
     const n = store.migrateZcodePathsV4()
-    if (n > 0) console.log(`[agentmeter] 已重置 ${n} 条 ZCode 事件以回填项目路径`)
+    if (n > 0) console.log(`[tokenpulse] 已重置 ${n} 条 ZCode 事件以回填项目路径`)
   }
 
   // 迁移 v5：Codex 旧格式（token_count）解析已支持 + ZCode WAL 签名修复，
@@ -69,7 +69,7 @@ export function bootstrap(): void {
   if (store.getMeta('data_version') !== '5') {
     store.resetCodexPositionsV5()
     store.setMeta('data_version', '5')
-    console.log('[agentmeter] 已重置 Codex 位点（旧格式重扫 + WAL 签名修复）')
+    console.log('[tokenpulse] 已重置 Codex 位点（旧格式重扫 + WAL 签名修复）')
   }
 
   scheduler = new UsageScheduler({
@@ -84,7 +84,7 @@ export function bootstrap(): void {
       if (inserted > 0 || !firstTickLogged) {
         firstTickLogged = true
         console.log(
-          `[agentmeter] tick ${summary.durationMs}ms: ` +
+          `[tokenpulse] tick ${summary.durationMs}ms: ` +
             summary.agents
               .map((a) => `${a.displayName} +${a.inserted}/${a.files}files${a.errors.length ? ` err=${a.errors.length}` : ''}`)
               .join(' · ')
@@ -93,7 +93,7 @@ export function bootstrap(): void {
     }
   })
   scheduler.start()
-  console.log(`[agentmeter] 启动完成：db=${defaultDbPath(userDataDir)} 轮询=${Math.max(1000, config.pollIntervalMs)}ms`)
+  console.log(`[tokenpulse] 启动完成：db=${defaultDbPath(userDataDir)} 轮询=${Math.max(1000, config.pollIntervalMs)}ms`)
 
   registerDataIpc(userDataDir)
 }
@@ -164,7 +164,7 @@ function registerDataIpc(userDataDir: string): void {
       patch: {
         pollIntervalMs?: number
         priceOverrides?: PriceOverrides
-        roots?: AgentMeterConfig['roots']
+        roots?: TokenPulseConfig['roots']
         onboarded?: boolean
       }
     ) => {
@@ -176,7 +176,7 @@ function registerDataIpc(userDataDir: string): void {
         // 用户覆盖价格 → 立即重算历史，所见即所得
         const n = store.recomputeCosts(effectivePriceTable(config.priceOverrides))
         broadcast('usage:tick', { startedAt: Date.now(), durationMs: 0, agents: [], freshEvents: [] })
-        console.log(`[agentmeter] 价格覆盖已保存，重算 ${n} 条事件`)
+        console.log(`[tokenpulse] 价格覆盖已保存，重算 ${n} 条事件`)
       }
       if (patch.roots) config.roots = patch.roots
       if (typeof patch.onboarded === 'boolean') config.onboarded = patch.onboarded
@@ -229,7 +229,7 @@ function trayText(): { label: string; tooltip: string } {
     .map((a) => `${a.displayName}: ${compactTokens(a.totals.total)} tok · ≈$${a.totals.costEstUSD.toFixed(2)}`)
   const active = store.activeSessions(5 * 60_000, Date.now()).length
   const tooltip =
-    `AgentMeter 今日 ${compactTokens(ov.totals.total)} tok · ≈$${ov.totals.costEstUSD.toFixed(2)}\n` +
+    `TokenPulse 今日 ${compactTokens(ov.totals.total)} tok · ≈$${ov.totals.costEstUSD.toFixed(2)}\n` +
     (lines.length > 0 ? `${lines.join('\n')}\n` : '') +
     (active > 0 ? `⚡ ${active} 个活动会话` : '空闲')
   return { label, tooltip }

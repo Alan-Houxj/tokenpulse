@@ -1,12 +1,12 @@
 /**
- * 用户配置：%APPDATA%/AgentMeter/config.json（全部可选，缺省即可用）
+ * 用户配置：%APPDATA%/TokenPulse/config.json（全部可选，缺省即可用）
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { AgentId } from './model/types'
 import type { PriceOverrides } from './engine/cost'
 
-export interface AgentMeterConfig {
+export interface TokenPulseConfig {
   /** 轮询间隔（ms），默认 5000 */
   pollIntervalMs: number
   /** 自定义数据根：追加到各 Agent 默认根之后 */
@@ -17,7 +17,7 @@ export interface AgentMeterConfig {
   onboarded: boolean
 }
 
-export function defaultConfig(): AgentMeterConfig {
+export function defaultConfig(): TokenPulseConfig {
   return {
     pollIntervalMs: 5000,
     roots: {},
@@ -30,12 +30,12 @@ export function configPath(userDataDir: string): string {
   return join(userDataDir, 'config.json')
 }
 
-export function loadConfig(userDataDir: string): AgentMeterConfig {
+export function loadConfig(userDataDir: string): TokenPulseConfig {
   const base = defaultConfig()
   const p = configPath(userDataDir)
   if (!existsSync(p)) return base
   try {
-    const raw = JSON.parse(readFileSync(p, 'utf8')) as Partial<AgentMeterConfig>
+    const raw = JSON.parse(readFileSync(p, 'utf8')) as Partial<TokenPulseConfig>
     return {
       pollIntervalMs: typeof raw.pollIntervalMs === 'number' ? raw.pollIntervalMs : base.pollIntervalMs,
       roots: raw.roots ?? base.roots,
@@ -47,7 +47,7 @@ export function loadConfig(userDataDir: string): AgentMeterConfig {
   }
 }
 
-export function saveConfig(userDataDir: string, config: AgentMeterConfig): void {
+export function saveConfig(userDataDir: string, config: TokenPulseConfig): void {
   const p = configPath(userDataDir)
   mkdirSync(dirname(p), { recursive: true })
   writeFileSync(p, JSON.stringify(config, null, 2), 'utf8')

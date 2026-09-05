@@ -1,10 +1,10 @@
 {
-  "name": "agentmeter",
-  "productName": "AgentMeter",
+  "name": "tokenpulse",
+  "productName": "TokenPulse",
   "version": "0.1.0",
   "description": "Local-first tray monitor for AI agent token usage — 消耗看得清、成本可控、实时感知",
   "main": "out/main/index.js",
-  "author": "AgentMeter contributors",
+  "author": "TokenPulse contributors",
   "license": "MIT",
   "scripts": {
     "start": "electron-vite dev",
@@ -17,8 +17,8 @@
     "package": "npm run icon && electron-vite build && electron-builder --win portable nsis"
   },
   "build": {
-    "appId": "io.github.agentmeter.app",
-    "productName": "AgentMeter",
+    "appId": "io.github.tokenpulse.app",
+    "productName": "TokenPulse",
     "directories": {
       "output": "dist"
     },

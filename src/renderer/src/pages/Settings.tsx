@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { AgentMeterConfig } from '@core/config'
+import type { TokenPulseConfig } from '@core/config'
 import Dropdown, { type DropdownOption } from '../components/Dropdown'
 
 interface PriceRow {
@@ -27,7 +27,7 @@ const INTERVAL_OPTIONS: DropdownOption<string>[] = [
 
 /** 设置页：轮询间隔 + 价格表（内置可覆盖 + 自定义新建）+ 数据目录 */
 export default function Settings(props: { onReplayOnboarding: () => void }): React.JSX.Element {
-  const [config, setConfig] = useState<AgentMeterConfig | null>(null)
+  const [config, setConfig] = useState<TokenPulseConfig | null>(null)
   const [builtin, setBuiltin] = useState<PriceTable>({})
   const [interval, setIntervalMs] = useState(5000)
   const [overrides, setOverrides] = useState<Record<string, PriceRow | null>>({})
@@ -265,7 +265,7 @@ export default function Settings(props: { onReplayOnboarding: () => void }): Rea
         <h3>数据与引导</h3>
         <div className="form-row">
           <label>应用数据目录</label>
-          <span className="mono small muted">{config ? '点击打开 %APPDATA%\\AgentMeter' : '…'}</span>
+          <span className="mono small muted">{config ? '点击打开 %APPDATA%\\TokenPulse' : '…'}</span>
           <button
             className="small-btn"
             onClick={() => {
