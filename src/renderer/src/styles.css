@@ -473,6 +473,17 @@ tr.overridden td {
   width: 100%;
 }
 
+/* 点击图表后浏览器给 SVG 画默认 focus 白框——去掉（无障碍焦点改由控件自身承担） */
+.recharts-wrapper:focus,
+.recharts-surface:focus,
+.recharts-brush:focus,
+.recharts-brush-slide:focus,
+.recharts-brush-traveller:focus,
+.recharts-brush-traveller rect:focus,
+.recharts-bar-rectangle path:focus {
+  outline: none;
+}
+
 /* ---------- 自绘下拉 ---------- */
 .dropdown {
   position: relative;
