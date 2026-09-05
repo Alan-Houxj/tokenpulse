@@ -1,7 +1,7 @@
 {
   "name": "tokenpulse",
   "productName": "TokenPulse",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first tray monitor for AI agent token usage — 消耗看得清、成本可控、实时感知",
   "main": "out/main/index.js",
   "author": "TokenPulse contributors",
