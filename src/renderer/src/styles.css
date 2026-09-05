@@ -1464,6 +1464,68 @@ tr.row-disabled td:first-child {
   100% { left: 100%; }
 }
 
+/* Agent 聚合卡内的折叠会话列表 */
+.live-session-list {
+  margin-top: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: card-in 200ms ease;
+}
+
+.live-session-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.live-session-row:hover {
+  background: var(--hover-overlay);
+}
+
+.live-session-row.err {
+  background: rgba(248, 113, 113, 0.06);
+}
+
+.live-dot.sm {
+  width: 6px;
+  height: 6px;
+}
+
+.live-session-project {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  flex-shrink: 0;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-session-action {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.live-session-tokens {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
 /* 空状态 */
 .live-empty {
   display: flex;

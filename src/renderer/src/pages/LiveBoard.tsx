@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentId, LiveAgentCard, LiveTimelineItem } from '@core/model/types'
+import type { AgentId, LiveAgentCard, LiveStatus, LiveTimelineItem } from '@core/model/types'
 import { formatTokens, formatUSD } from '../lib/format'
 
 type FilterId = 'all' | 'running' | 'idle' | 'error'
@@ -11,7 +11,7 @@ const FILTERS: { id: FilterId; label: string }[] = [
   { id: 'error', label: '异常' }
 ]
 
-const STATUS_META: Record<LiveAgentCard['status'], { label: string; dot: string }> = {
+const STATUS_META: Record<LiveStatus, { label: string; dot: string }> = {
   thinking: { label: '思考中', dot: 'dot-thinking' },
   waiting: { label: '等待模型', dot: 'dot-waiting' },
   tool: { label: '调用工具', dot: 'dot-tool' },
@@ -19,11 +19,23 @@ const STATUS_META: Record<LiveAgentCard['status'], { label: string; dot: string 
   error: { label: '异常', dot: 'dot-error' }
 }
 
-const isRunning = (s: LiveAgentCard['status']): boolean => s === 'thinking' || s === 'waiting' || s === 'tool'
+const isRunning = (s: LiveStatus): boolean => s === 'thinking' || s === 'waiting' || s === 'tool'
 
-/** 卡片排序权重：运行系 → 空闲 → 异常（置底红标） */
-const statusRank = (s: LiveAgentCard['status']): number =>
-  isRunning(s) ? 0 : s === 'idle' ? 1 : 2
+/** 聚合状态：任一异常 → 异常；否则任一运行 → 运行；否则空闲 */
+function rollupStatus(list: LiveAgentCard[]): LiveStatus {
+  if (list.some((c) => c.status === 'error')) return 'error'
+  if (list.some((c) => isRunning(c.status))) return 'thinking'
+  return 'idle'
+}
+
+const rollupRank = (s: LiveStatus): number => (s === 'error' ? 2 : isRunning(s) ? 0 : 1)
+
+/** 一个 Agent（种类）一张卡，多会话折叠在卡内 */
+interface AgentGroup {
+  agent: AgentId
+  list: LiveAgentCard[] // 主会话（最近活动）在首位
+  status: LiveStatus
+}
 
 export default function LiveBoard(props: {
   tickVersion: number
@@ -31,19 +43,16 @@ export default function LiveBoard(props: {
 }): React.JSX.Element {
   const [cards, setCards] = useState<LiveAgentCard[] | null>(null)
   const [filter, setFilter] = useState<FilterId>('all')
+  const [expanded, setExpanded] = useState<Set<AgentId>>(new Set())
   const [selected, setSelected] = useState<LiveAgentCard | null>(null)
   const [timeline, setTimeline] = useState<LiveTimelineItem[] | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; card: LiveAgentCard } | null>(null)
-  // 1 秒本地节拍：时长与 token 平滑递增（不等 5 秒轮询跳变）
+  // 1 秒本地节拍：时长与 token 平滑递增
   const [nowTick, setNowTick] = useState(() => Date.now())
-  const boardRef = useRef<HTMLDivElement>(null)
-  // 累计 token 单调保持：外推重置若低于已显示值则不回退（累计语义只涨不减）；
-  // 任务切换（taskStart 变化）时重置归零
   const shownTokensRef = useRef(new Map<string, { taskStart: number; tokens: number }>())
 
   useEffect(() => {
     void window.api.getLiveAgents().then((next) => {
-      // 清理已消失卡片的记录，防止 Map 无限增长
       const liveKeys = new Set(next.map((c) => `${c.agent}:${c.sessionId}`))
       for (const k of shownTokensRef.current.keys()) {
         if (!liveKeys.has(k)) shownTokensRef.current.delete(k)
@@ -63,7 +72,6 @@ export default function LiveBoard(props: {
     void window.api.getLiveTimeline(selected.agent, selected.sessionId).then(setTimeline)
   }, [selected])
 
-  // 右键菜单：点外部 / Escape 关闭
   useEffect(() => {
     if (!ctxMenu) return
     const close = (): void => setCtxMenu(null)
@@ -78,44 +86,36 @@ export default function LiveBoard(props: {
     }
   }, [ctxMenu])
 
-  const filtered = useMemo(() => {
+  const groups = useMemo<AgentGroup[]>(() => {
     if (!cards) return []
-    if (filter === 'all') return cards
-    if (filter === 'running') return cards.filter((c) => isRunning(c.status))
-    if (filter === 'idle') return cards.filter((c) => c.status === 'idle')
-    return cards.filter((c) => c.status === 'error')
-  }, [cards, filter])
-
-  // 按项目分组；有运行中 Agent 的组置顶；组内按状态排序、再按最近活动
-  const groups = useMemo(() => {
-    const m = new Map<string, LiveAgentCard[]>()
-    for (const c of filtered) {
-      const list = m.get(c.projectName) ?? []
+    const m = new Map<AgentId, LiveAgentCard[]>()
+    for (const c of cards) {
+      const list = m.get(c.agent) ?? []
       list.push(c)
-      m.set(c.projectName, list)
+      m.set(c.agent, list)
     }
     return [...m.entries()]
-      .map(([name, list]) => ({
-        name,
-        list: [...list].sort(
-          (a, b) => statusRank(a.status) - statusRank(b.status) || b.lastActivityTs - a.lastActivityTs
-        )
-      }))
-      .sort((a, b) => {
-        const aRun = a.list.some((c) => isRunning(c.status)) ? 0 : 1
-        const bRun = b.list.some((c) => isRunning(c.status)) ? 0 : 1
-        return aRun - bRun
+      .map(([agent, list]) => {
+        const sorted = [...list].sort((a, b) => b.lastActivityTs - a.lastActivityTs)
+        return { agent, list: sorted, status: rollupStatus(sorted) }
       })
-  }, [filtered])
+      .sort((a, b) => rollupRank(a.status) - rollupRank(b.status))
+  }, [cards])
 
-  const runningCount = cards?.filter((c) => isRunning(c.status)).length ?? 0
+  const filtered = useMemo(() => {
+    if (filter === 'all') return groups
+    return groups.filter((g) => (filter === 'running' ? isRunning(g.status) : g.status === filter))
+  }, [groups, filter])
+
+  const runningAgents = groups.filter((g) => isRunning(g.status)).length
+  const totalSessions = cards?.length ?? 0
 
   return (
-    <div className="page live-page" ref={boardRef}>
+    <div className="page live-page">
       <header className="live-head">
         <h1 className="live-title">Agent 实时看板</h1>
         <span className="live-count">
-          共 {cards?.length ?? 0} 个 Agent · {runningCount} 个运行中
+          {groups.length} 种 Agent · {totalSessions} 个会话 · {runningAgents} 个运行中
         </span>
       </header>
 
@@ -134,23 +134,25 @@ export default function LiveBoard(props: {
       {cards != null && cards.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="live-groups">
-          {groups.map((g) => (
-            <section key={g.name} className="live-group">
-              <h2 className="live-group-title">{g.name}</h2>
-              <div className="live-grid">
-                {g.list.map((c) => (
-                  <AgentCard
-                    key={`${c.agent}:${c.sessionId}`}
-                    card={c}
-                    now={nowTick}
-                    shownTokensRef={shownTokensRef.current}
-                    onClick={() => setSelected(c)}
-                    onContextMenu={(x, y) => setCtxMenu({ x, y, card: c })}
-                  />
-                ))}
-              </div>
-            </section>
+        <div className="live-grid live-grid-agents">
+          {filtered.map((g) => (
+            <AgentGroupCard
+              key={g.agent}
+              group={g}
+              now={nowTick}
+              shownTokensRef={shownTokensRef.current}
+              expanded={expanded.has(g.agent)}
+              onToggle={() => {
+                setExpanded((prev) => {
+                  const next = new Set(prev)
+                  if (next.has(g.agent)) next.delete(g.agent)
+                  else next.add(g.agent)
+                  return next
+                })
+              }}
+              onOpenSession={(c) => setSelected(c)}
+              onContextMenu={(x, y, c) => setCtxMenu({ x, y, card: c })}
+            />
           ))}
         </div>
       )}
@@ -186,7 +188,7 @@ export default function LiveBoard(props: {
               setCtxMenu(null)
             }}
           >
-            复制 Agent ID
+            复制会话 ID
           </button>
           {ctxMenu.card.logFilePath && (
             <button
@@ -205,63 +207,110 @@ export default function LiveBoard(props: {
   )
 }
 
-function AgentCard(props: {
-  card: LiveAgentCard
-  now: number
-  shownTokensRef: Map<string, { taskStart: number; tokens: number }>
-  onClick: () => void
-  onContextMenu: (x: number, y: number) => void
-}): React.JSX.Element {
-  const c = props.card
-  const meta = STATUS_META[c.status]
-  // 平滑递增：时长 = now - 任务起点；token = 采集值 + 速率 × 经过时间
-  const elapsedMs = Math.max(0, props.now - c.taskStartTs)
+/** 平滑 token（任务内单调保持，任务切换归零） */
+function smoothTokensOf(
+  c: LiveAgentCard,
+  now: number,
+  shown: Map<string, { taskStart: number; tokens: number }>
+): number {
   const key = `${c.agent}:${c.sessionId}`
   const computed =
-    c.taskTokens + Math.round((c.rateTokensPerSec * Math.max(0, props.now - c.polledAt)) / 1000)
-  // 单调保持（任务内）：轮询重置值低于已显示值时不回退；新任务（起点变化）归零重计
-  const prev = props.shownTokensRef.get(key)
+    c.taskTokens + Math.round((c.rateTokensPerSec * Math.max(0, now - c.polledAt)) / 1000)
+  const prev = shown.get(key)
   const inSameTask = prev != null && prev.taskStart === c.taskStartTs
-  const shown = inSameTask ? Math.max(computed, prev.tokens) : computed
-  props.shownTokensRef.set(key, { taskStart: c.taskStartTs, tokens: shown })
-  const smoothTokens = shown
-  const showProgress = c.status === 'thinking' || c.status === 'waiting' || c.status === 'tool'
+  const val = inSameTask ? Math.max(computed, prev.tokens) : computed
+  shown.set(key, { taskStart: c.taskStartTs, tokens: val })
+  return val
+}
+
+function AgentGroupCard(props: {
+  group: AgentGroup
+  now: number
+  shownTokensRef: Map<string, { taskStart: number; tokens: number }>
+  expanded: boolean
+  onToggle: () => void
+  onOpenSession: (c: LiveAgentCard) => void
+  onContextMenu: (x: number, y: number, c: LiveAgentCard) => void
+}): React.JSX.Element {
+  const g = props.group
+  const meta = STATUS_META[g.status]
+  const main = g.list[0]! // 主会话 = 最近活动
+  const totalTokens = g.list.reduce(
+    (s, c) => s + smoothTokensOf(c, props.now, props.shownTokensRef),
+    0
+  )
+  const elapsedMs = Math.max(0, props.now - main.taskStartTs)
+  const hasError = g.status === 'error'
+  const multi = g.list.length > 1
 
   return (
-    <div
-      className={`live-card ${c.status === 'error' ? 'has-error' : ''}`}
-      onClick={props.onClick}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        props.onContextMenu(e.clientX, e.clientY)
-      }}
-    >
-      <div className="live-card-head">
+    <div className={`live-card live-card-agent ${hasError ? 'has-error' : ''}`}>
+      <div
+        className="live-card-head"
+        onClick={multi ? props.onToggle : () => props.onOpenSession(main)}
+        style={multi ? { cursor: 'pointer' } : undefined}
+      >
         <span className="live-agent-name">
           <span className={`live-dot ${meta.dot}`} aria-hidden />
-          {agentLabel(c.agent)}
+          {agentLabel(g.agent)}
         </span>
-        <span className="live-project-tag" title={c.projectPath}>
-          {c.projectName}
-        </span>
-        {c.anomaly && (
-          <span className="live-anomaly-badge" title={c.anomaly} aria-label="异常" />
+        {multi ? (
+          <span className="live-project-tag">
+            {props.expanded ? '▾' : '▸'} {g.list.length} 个会话
+          </span>
+        ) : (
+          <span className="live-project-tag" title={main.projectPath}>
+            {main.projectName}
+          </span>
+        )}
+        {hasError && (
+          <span
+            className="live-anomaly-badge"
+            title={g.list.find((c) => c.anomaly)?.anomaly}
+          />
         )}
       </div>
 
-      <p className="live-action" title={c.action}>
-        {c.action}
+      <p className="live-action" title={main.action}>
+        {main.action}
+        {multi && <span className="muted">（等 {g.list.length - 1} 个会话）</span>}
       </p>
 
       <div className="live-meta">
-        <span className="live-meta-model">{c.model ?? '—'}</span>
+        <span className="live-meta-model">{main.model ?? '—'}</span>
         <span className="live-meta-num">{formatElapsed(elapsedMs)}</span>
-        <span className="live-meta-num">{formatTokens(smoothTokens)}</span>
+        <span className="live-meta-num">{formatTokens(totalTokens)}</span>
       </div>
 
-      {showProgress && (
+      {isRunning(g.status) && (
         <div className="live-progress">
           <div className="live-progress-bar" />
+        </div>
+      )}
+
+      {/* 折叠区：多会话列表（单会话 Agent 不显示） */}
+      {multi && props.expanded && (
+        <div className="live-session-list">
+          {g.list.map((c) => (
+            <div
+              key={c.sessionId}
+              className={`live-session-row ${c.status === 'error' ? 'err' : ''}`}
+              onClick={() => props.onOpenSession(c)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                props.onContextMenu(e.clientX, e.clientY, c)
+              }}
+              title={c.projectPath}
+            >
+              <span className={`live-dot sm ${STATUS_META[c.status].dot}`} aria-hidden />
+              <span className="live-session-project">{c.projectName}</span>
+              <span className="live-session-action">{c.action}</span>
+              <span className="live-session-tokens">
+                {formatTokens(smoothTokensOf(c, props.now, props.shownTokensRef))}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -279,9 +328,7 @@ function TimelinePanel(props: {
       <div className="live-panel-mask" onClick={props.onClose} />
       <aside className="live-panel">
         <header className="live-panel-head">
-          <span>
-            {agentLabel(props.card.agent)} · 实时请求流水
-          </span>
+          <span>{agentLabel(props.card.agent)} · 实时请求流水</span>
           <button className="live-panel-close" onClick={props.onClose} aria-label="关闭">
             ✕
           </button>
