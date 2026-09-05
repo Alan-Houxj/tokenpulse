@@ -2,7 +2,9 @@
 
 > 本地优先的 AI Agent token 消耗监控 — 消耗看得清 · 成本可控 · 实时感知
 
-一个开源的 Windows/macOS/Linux 托盘常驻应用：把 Claude Code、Codex、Gemini CLI、Qwen Code、ZCode 等 AI 编程 Agent 散落在本地的用量记录，统一到一个实时仪表盘。
+一个开源的跨平台托盘应用：把 Claude Code、Codex、Gemini CLI、Qwen Code、ZCode 等 AI 编程 Agent 散落在本地的用量记录，统一到一个实时仪表盘。
+
+> **当前版本 v0.1 仅提供 Windows 安装包**（`TokenPulse Setup x.x.x.exe`，也附带免安装便携版 exe）。代码本身跨平台（数据路径按 macOS/Linux 约定编写），macOS / Linux 构建在 CI 计划中。
 
 **零配置**：下载 → 双击 → 看到自己的用量。不登录、不填 API Key、不需要管理员权限、数据不出本机。
 
