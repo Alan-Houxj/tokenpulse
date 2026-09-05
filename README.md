@@ -55,17 +55,6 @@ TokenPulse 把它们统统读出来，放进一个仪表盘。
 
 你的 Agent 没在列表里？[提个 issue](https://github.com/Alan-Houxj/tokenpulse/issues) 告诉我们它的数据存在哪。
 
-## 参与开发
-
-```bash
-git clone https://github.com/Alan-Houxj/tokenpulse.git
-cd tokenpulse
-npm install
-npm test         # 36 个单测
-npm start        # 开发模式
-npm run package  # 打包
-```
-
 ## License
 
 [MIT](LICENSE)
