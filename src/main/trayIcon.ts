@@ -71,7 +71,7 @@ class PixelBuffer {
       }
     }
   }
-  drawText(text: string, color: Rgba, scale: number, offsetX: number, offsetY: number): void {
+  drawText(text: string, color: Rgba, scale: number, offsetX: number, offsetY: number, gap = scale): void {
     let cx = offsetX
     for (const ch of text) {
       const glyph = FONT_5X7[ch] ?? FONT_5X7[' ']!
@@ -86,11 +86,21 @@ class PixelBuffer {
           }
         }
       }
-      cx += (5 + 1) * scale
+      cx += 5 * scale + gap
     }
   }
   toNativeImage(): NativeImage {
-    return nativeImage.createFromBuffer(this.data, { width: this.width, height: this.height })
+    // Electron 在 Windows/Linux 期望 BGRA 字节序，macOS 为 RGBA；内部按 RGBA 绘制，输出前转换
+    if (process.platform === 'darwin') {
+      return nativeImage.createFromBuffer(this.data, { width: this.width, height: this.height })
+    }
+    const bgra = Buffer.from(this.data)
+    for (let i = 0; i < bgra.length; i += 4) {
+      const r = bgra[i]!
+      bgra[i] = bgra[i + 2]!
+      bgra[i + 2] = r
+    }
+    return nativeImage.createFromBuffer(bgra, { width: this.width, height: this.height })
   }
 }
 
@@ -114,10 +124,12 @@ export function createAppIcon(size = 16): NativeImage {
 export function createTrayLabelIcon(text: string, size = 16): NativeImage {
   const buf = new PixelBuffer(size, size)
   buf.fillRounded(BG, Math.max(2, Math.floor(size / 5)))
-  const scale = text.length >= 3 ? 1 : text.length === 2 ? 2 : 2
-  const textW = text.length * 6 * scale - scale
+  const scale = text.length >= 3 ? 1 : 2
+  // 3 字符按默认间距宽 17px 超出 16px 画布会裁掉首字符左半，压成 0 间距（15px）
+  const gap = text.length >= 3 ? 0 : scale
+  const textW = text.length * 5 * scale + (text.length - 1) * gap
   const offX = Math.floor((size - textW) / 2)
   const offY = Math.floor((size - 7 * scale) / 2)
-  buf.drawText(text, FG, scale, offX, offY)
+  buf.drawText(text, FG, scale, offX, offY, gap)
   return buf.toNativeImage()
 }
