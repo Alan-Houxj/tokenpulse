@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -24,10 +24,13 @@ function fmtMoney(v: number): string {
   return v < 0.1 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`
 }
 
-/** 浮窗悬停态：当前桶（浮窗固定在图表左上角，只随悬停换内容不挪位置） */
+/** 浮窗悬停态：柱子锚点（x/y 为 svg 坐标）+ 桶信息 */
 interface TipState {
   bs: number
   label: string
+  x: number
+  y: number
+  chartW: number
 }
 
 /** 趋势：分模型堆叠柱（Grafana 式离散桶），Token/金额维度切换，chips 筛选，结构化悬停浮窗 */
@@ -40,7 +43,13 @@ export default function Trend(props: {
   const [loading, setLoading] = useState(true)
   const [dim, setDim] = useState<Dim>('token')
   const [tip, setTip] = useState<TipState | null>(null)
+  const [frozen, setFrozen] = useState(false) // 鼠标在浮窗上 → 位置锁死
+  const [pos, setPos] = useState<{ left: number; top: number }>({ left: 0, top: 8 })
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingTip = useRef<TipState | null>(null)
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  const tipRef = useRef<HTMLDivElement | null>(null)
 
   const bucket = bucketForRange(props.range)
 
@@ -112,19 +121,52 @@ export default function Trend(props: {
       hideTimer.current = null
     }
   }
+  const cancelSettle = (): void => {
+    if (settleTimer.current) {
+      clearTimeout(settleTimer.current)
+      settleTimer.current = null
+    }
+    pendingTip.current = null
+  }
+  // pump 回调：活跃柱变化。首次出现立即落位；此后换柱需停留 ~280ms 才平移过去
+  //（快速划过不跳），避免"鼠标追浮窗、浮窗往前逃"的死循环
   const onTipHover = (next: TipState): void => {
     cancelHide()
-    setTip((prev) => (prev && prev.bs === next.bs && prev.label === next.label ? prev : next))
+    if (tip == null) {
+      // 首次出现：同步算好落位，避免从边缘滑入
+      setPos({ left: clampX(next.x, wrapRef.current?.clientWidth ?? next.chartW), top: 8 })
+      setTip(next)
+      return
+    }
+    if (next.bs === tip.bs) {
+      cancelSettle()
+      return
+    }
+    pendingTip.current = next
+    cancelSettle()
+    settleTimer.current = setTimeout(() => {
+      settleTimer.current = null
+      if (pendingTip.current) setTip(pendingTip.current)
+      pendingTip.current = null
+    }, 280)
   }
   const scheduleHide = (): void => {
     cancelHide()
     hideTimer.current = setTimeout(() => setTip(null), 200)
   }
-  useEffect(() => cancelHide, [])
+  useEffect(
+    () => () => {
+      cancelHide()
+      cancelSettle()
+    },
+    []
+  )
 
   const switchDim = (d: Dim): void => {
     setDim(d)
     setTip(null) // 维度切换时浮窗数据口径失效，直接收起
+    setFrozen(false)
+    cancelSettle()
   }
 
   // 当前悬停桶的明细（按图例顺序，只含有数据的已启用模型）
@@ -135,6 +177,36 @@ export default function Trend(props: {
         : byModel.filter((p) => p.bucketStart === tip.bs && effectiveEnabled.has(p.model) && p.total > 0),
     [tip, byModel, effectiveEnabled]
   )
+
+  // ---- 浮窗定位：跟随悬停柱，但 frozen（鼠标在浮窗上）时位置锁死 ----
+  const TIP_W = 252
+  const clampX = (x: number, chartW: number): number =>
+    Math.max(
+      0,
+      Math.min(
+        x + 14 + TIP_W > chartW ? x - 14 - TIP_W : x + 14,
+        Math.max(0, chartW - TIP_W - 4)
+      )
+    )
+  const tipX = useMemo(() => {
+    if (!tip) return 0
+    return clampX(tip.x, wrapRef.current?.clientWidth ?? tip.chartW)
+  }, [tip])
+
+  // 垂直：按浮窗实际高度围绕柱顶居中并夹紧（渲染后校准，无闪跳）
+  useLayoutEffect(() => {
+    if (!tip || frozen || !tipRef.current || !wrapRef.current) return
+    const h = tipRef.current.offsetHeight
+    const chartH = wrapRef.current.clientHeight
+    const y = Math.max(8, Math.min(tip.y - h / 2, chartH - h - 8))
+    setPos((p) => (p.top === y ? p : { ...p, top: y }))
+  }, [tip, tipPoints, dim, frozen])
+
+  // 横向：换柱落位时更新 x（frozen 时不更新，锁死在原地）
+  useLayoutEffect(() => {
+    if (!tip || frozen) return
+    setPos((p) => (p.left === tipX ? p : { ...p, left: tipX }))
+  }, [tip, tipX, frozen])
 
   return (
     <div className="page">
@@ -200,7 +272,7 @@ export default function Trend(props: {
         ) : modelData.length === 0 || models.length === 0 ? (
           <p className="muted">该区间暂无数据</p>
         ) : (
-          <div className="chart-wrap">
+          <div className="chart-wrap" ref={wrapRef}>
             <ResponsiveContainer width="100%" height={380}>
               <BarChart
                 data={modelData}
@@ -262,10 +334,20 @@ export default function Trend(props: {
 
             {tip != null && tipPoints.length > 0 && (
               <div
+                ref={tipRef}
                 className={`trend-tip${tipPoints.length > 4 ? ' compact' : ''}`}
+                style={{ left: pos.left, top: pos.top }}
                 role="tooltip"
-                onMouseEnter={cancelHide}
-                onMouseLeave={scheduleHide}
+                onMouseEnter={() => {
+                  // 悬到浮窗上：位置与内容立即锁死，清除任何待落位的换柱
+                  cancelHide()
+                  cancelSettle()
+                  setFrozen(true)
+                }}
+                onMouseLeave={() => {
+                  setFrozen(false)
+                  scheduleHide()
+                }}
               >
                 <div className="trend-tip-head">
                   {tip.label} · {dim === 'token' ? 'Token 消耗' : '金额消耗'}
@@ -317,18 +399,26 @@ export default function Trend(props: {
   )
 }
 
-/** Recharts 数据泵：不做渲染，只把当前悬停桶回调给外层自绘浮窗 */
+/** Recharts 数据泵：不做渲染，只把当前悬停柱的锚点与桶信息回调给外层自绘浮窗 */
 function TipPump(props: {
   active?: boolean
   payload?: { payload?: { bs?: number } }[]
   label?: string
+  coordinate?: { x: number; y: number }
+  viewBox?: { width?: number }
   onHover: (t: TipState) => void
   onInactive: () => void
 }): null {
-  const { active, payload, label, onHover, onInactive } = props
+  const { active, payload, label, coordinate, viewBox, onHover, onInactive } = props
   useEffect(() => {
-    if (active && payload && payload.length > 0 && payload[0]?.payload?.bs != null) {
-      onHover({ bs: Number(payload[0].payload.bs), label: String(label ?? '') })
+    if (active && payload && payload.length > 0 && coordinate && payload[0]?.payload?.bs != null) {
+      onHover({
+        bs: Number(payload[0].payload.bs),
+        label: String(label ?? ''),
+        x: coordinate.x,
+        y: coordinate.y,
+        chartW: viewBox?.width ?? 0
+      })
     } else if (!active) {
       onInactive() // 悬停离开柱子（仍在图内空白区）→ 延迟隐藏
     }

@@ -676,11 +676,11 @@ tr.overridden td {
   font-weight: 500;
 }
 
-/* ---------- 趋势悬停浮窗：固定图表左上角（Grafana 式），模型主行 + 缩进明细两级 ---------- */
+/* ---------- 趋势悬停浮窗：跟柱定位（悬到浮窗上时位置锁死），模型主行 + 缩进明细两级 ---------- */
 .trend-tip {
   position: absolute;
   top: 8px;
-  left: 8px;
+  left: 0;
   width: 252px;
   padding: 9px 11px 7px;
   background: #1c2027;
@@ -689,13 +689,14 @@ tr.overridden td {
   box-shadow: var(--shadow-pop);
   font-size: 12px;
   line-height: 1.5;
-  /* 可交互：悬到浮窗上不丢、被盖住的柱子不误触、内容超高时滚动条可用 */
+  /* 可交互：悬到浮窗上位置锁死不丢、被盖住的柱子不误触、内容超高时滚动条可用 */
   pointer-events: auto;
   cursor: default;
   z-index: 10;
   max-height: calc(100% - 16px);
   overflow-y: auto;
   scrollbar-width: thin;
+  transition: left 0.15s ease, top 0.15s ease;
 }
 
 /* 模型 >4 个时收紧行距，尽量塞进图表高度 */
