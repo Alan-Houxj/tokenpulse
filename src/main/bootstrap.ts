@@ -137,7 +137,9 @@ function registerDataIpc(userDataDir: string): void {
     (_e, p: { from: number; to: number; bucket: 'hour' | 'day'; byModel?: boolean }) => {
       const range = { from: Number(p.from), to: Number(p.to) }
       const bucket = p.bucket === 'hour' ? 'hour' : 'day'
-      return p.byModel ? store.trendByModel(range, bucket) : store.trend(range, bucket)
+      return p.byModel
+        ? store.trendByModel(range, bucket, effectivePriceTable(config.priceOverrides))
+        : store.trend(range, bucket)
     }
   )
 

@@ -180,6 +180,34 @@ describe('Store', () => {
     expect(ov.byModel[0]!.totals.eventCount).toBe(3)
   })
 
+  it('trendByModel 分摊金额合计等于 costEst，输入含 KV 为子集语义', () => {
+    const base = Date.UTC(2026, 8, 1, 10)
+    store.insertEvents([
+      ev({
+        id: 't:1',
+        agent: 'zcode',
+        model: 'GLM-5.3',
+        ts: base,
+        tokens: { input: 800, output: 100, reasoning: 0, cacheRead: 5000, cacheWrite: 0 },
+        costEstUSD: (800 * 1.4 + 5000 * 0.26 + 100 * 4.4) / 1e6
+      })
+    ])
+    const prices = { 'glm-5.3': { input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0 } }
+    const rows = store.trendByModel({ from: base - 1000, to: base + 3600_000 }, 'hour', prices)
+    expect(rows).toHaveLength(1)
+    const r = rows[0]!
+    // 展示口径：输入含 KV（800+5000），输出独立，KV 是输入的子集
+    expect(r.input).toBe(5800)
+    expect(r.output).toBe(100)
+    expect(r.cacheRead).toBe(5000)
+    expect(r.total).toBe(5900)
+    // 分摊：(800×1.4 + 5000×0.26 + 100×4.4)/1e6；costInput 含 costCache 子集
+    expect(r.costInput).toBeCloseTo((800 * 1.4 + 5000 * 0.26) / 1e6, 9)
+    expect(r.costOutput).toBeCloseTo((100 * 4.4) / 1e6, 9)
+    expect(r.costCache).toBeCloseTo((5000 * 0.26) / 1e6, 9)
+    expect(r.costInput + r.costOutput).toBeCloseTo(r.costEstUSD, 6)
+  })
+
   it('迁移 v6：存量大小写混合的模型名统一为小写', () => {
     store.insertEvents([ev({ id: 'z:1', agent: 'zcode', sessionId: 's1', model: 'legacy' })])
     store.close()

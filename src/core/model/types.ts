@@ -125,6 +125,15 @@ export interface TrendPointByModel {
   model: string
   total: number
   costEstUSD: number
+  /** 明细（展示口径）：输入含 KV 缓存；输出含推理；KV = cacheRead + cacheWrite（输入的子集） */
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  /** 明细分摊金额（与 costEstUSD 同价目表）：costCache 是 costInput 的子集，三者不可相加 */
+  costInput: number
+  costOutput: number
+  costCache: number
 }
 
 export interface SessionRow {

@@ -616,6 +616,148 @@ tr.overridden td {
 /* ---------- 图表 ---------- */
 .chart-wrap {
   width: 100%;
+  position: relative; /* 悬停浮窗以此为定位基准 */
+}
+
+/* ---------- 趋势图卡片头部：标题+单位 与 维度切换 ---------- */
+.trend-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.trend-chart-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.trend-chart-title h3 {
+  margin: 0;
+}
+
+.trend-unit {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.chart-seg {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-sm);
+  gap: 2px;
+}
+
+.chart-seg button {
+  height: 24px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.chart-seg button:hover {
+  color: var(--text-primary);
+}
+
+.chart-seg button.on {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* ---------- 趋势悬停浮窗：模型主行 + 缩进明细两级 ---------- */
+.trend-tip {
+  position: absolute;
+  top: 8px;
+  width: 252px;
+  padding: 10px 12px 8px;
+  background: #1c2027;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  font-size: 12px;
+  line-height: 1.6;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.trend-tip-head {
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.trend-tip-model + .trend-tip-model {
+  margin-top: 6px;
+}
+
+.trend-tip-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.trend-tip-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 3px;
+}
+
+.trend-tip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trend-tip-val {
+  white-space: nowrap;
+}
+
+/* 明细行：缩进 + 左侧浅竖线表示层级；小一号、更淡 */
+.trend-tip-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 1px 0 0 7px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.trend-tip-sub-k {
+  flex: 1;
+}
+
+.trend-tip-sub-v {
+  white-space: nowrap;
+}
+
+.trend-tip-total {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
 /* 点击图表后浏览器给 SVG 画默认 focus 白框——去掉（无障碍焦点改由控件自身承担） */

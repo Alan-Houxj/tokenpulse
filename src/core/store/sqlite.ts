@@ -17,7 +17,7 @@ import type {
   TrendPointByModel,
   UsageEvent
 } from '../model/types'
-import { canonicalModelId, estimateCost, type PriceTable } from '../engine/cost'
+import { canonicalModelId, estimateCost, normalizeModelId, type PriceTable } from '../engine/cost'
 import { openOwnDb, type DbDriver } from './dbDriver'
 
 const SCHEMA = `
@@ -283,23 +283,51 @@ export class Store {
   }
 
   /** 趋势序列（按模型分组，用于分模型堆叠视图） */
-  trendByModel(range: { from: number; to: number }, bucket: 'hour' | 'day'): TrendPointByModel[] {
+  trendByModel(
+    range: { from: number; to: number },
+    bucket: 'hour' | 'day',
+    prices: PriceTable = {}
+  ): TrendPointByModel[] {
     const fmt = bucket === 'hour' ? '%Y-%m-%dT%H:00:00' : '%Y-%m-%dT00:00:00'
     const rows = this.db.prepare(`
       SELECT
         strftime('${fmt}', ts / 1000, 'unixepoch', 'localtime') AS bucket,
         model,
         SUM(input_tokens + output_tokens + reasoning_tokens + cache_read_tokens + cache_write_tokens) AS total_tokens,
+        SUM(input_tokens) AS input_pure,
+        SUM(output_tokens) AS output_pure,
+        SUM(reasoning_tokens) AS reasoning,
+        SUM(cache_read_tokens) AS cache_read,
+        SUM(cache_write_tokens) AS cache_write,
         SUM(cost_est_usd) AS cost_est_usd
       FROM events ${this.where(range)}
       GROUP BY bucket, model ORDER BY bucket
     `).all()
-    return rows.map((r) => ({
-      bucketStart: new Date(String(r['bucket'])).getTime(),
-      model: String(r['model']),
-      total: Number(r['total_tokens'] ?? 0),
-      costEstUSD: Number(r['cost_est_usd'] ?? 0)
-    }))
+    return rows.map((r) => {
+      const p = prices[normalizeModelId(String(r['model']))]
+      const inputPure = Number(r['input_pure'] ?? 0)
+      const outputPure = Number(r['output_pure'] ?? 0)
+      const reasoning = Number(r['reasoning'] ?? 0)
+      const cacheRead = Number(r['cache_read'] ?? 0)
+      const cacheWrite = Number(r['cache_write'] ?? 0)
+      // 金额分摊与 estimateCost 完全同式（reasoning 不计价）；展示口径：输入含 KV 与推理、输出含推理
+      const costCache = p ? (cacheRead * p.cacheRead + cacheWrite * p.cacheWrite) / 1e6 : 0
+      const costInput = p ? (inputPure * p.input) / 1e6 + costCache : 0
+      const costOutput = p ? (outputPure * p.output) / 1e6 : 0
+      return {
+        bucketStart: new Date(String(r['bucket'])).getTime(),
+        model: String(r['model']),
+        total: Number(r['total_tokens'] ?? 0),
+        costEstUSD: Number(r['cost_est_usd'] ?? 0),
+        input: inputPure + reasoning + cacheRead + cacheWrite,
+        output: outputPure + reasoning,
+        cacheRead,
+        cacheWrite,
+        costInput,
+        costOutput,
+        costCache
+      }
+    })
   }
 
   /** 会话明细（按 agent+session 聚合，可按时间范围 / agent / 模型过滤） */
