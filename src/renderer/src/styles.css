@@ -1404,13 +1404,14 @@ tr.row-disabled td:first-child {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--text-tertiary);
+  width: 14px;
+  height: 14px;
+  border: 2px solid #d4d4d8;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: 9px;
+  font-weight: 500;
   line-height: 1;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   cursor: default;
   user-select: none;
 }

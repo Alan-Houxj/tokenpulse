@@ -1,9 +1,10 @@
 import { nativeImage, type NativeImage } from 'electron'
 
 /**
- * 托盘图标：与应用图标/顶栏 Logo 一致的脉冲波形（蓝底圆角方块 + 白色心电折线）。
+ * 托盘图标：透明底 + 蓝色脉冲折线（与顶栏 Logo 同一组 WAVE_20 点集）。
  * 不带图像依赖：直接在 RGBA 缓冲区上绘制，4 倍超采样后降采样抗锯齿。
- * 几何与 build/gen-icon.mjs 共用同一组 WAVE_20 点集，想改形状两边同步改。
+ * 16px 下实底方块会糊成一团，去底只留线条在浅色/深色任务栏上都更清晰；
+ * 应用图标（exe/窗口）仍保留蓝底方块，两者刻意不同。
  */
 
 interface Rgba {
@@ -13,8 +14,7 @@ interface Rgba {
   a?: number
 }
 
-const BG: Rgba = { r: 59, g: 130, b: 246 } // blue-500（品牌蓝）
-const FG: Rgba = { r: 240, g: 244, b: 250 } // 波形白
+const WAVE: Rgba = { r: 59, g: 130, b: 246 } // blue-500（品牌蓝）
 
 // 脉冲波形点集（TitleBar Logo 的 20x20 viewBox 坐标）
 const WAVE_20 = [
@@ -49,18 +49,6 @@ class PixelBuffer {
       this.data[i + 1] = Math.round((c.g * a + this.data[i + 1]! * oldA * (1 - a / 255)) / na)
       this.data[i + 2] = Math.round((c.b * a + this.data[i + 2]! * oldA * (1 - a / 255)) / na)
       this.data[i + 3] = Math.round(na)
-    }
-  }
-  fillRounded(color: Rgba, radius: number): void {
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        // 距圆角中心的距离判定
-        const cx = Math.min(Math.max(x, radius), this.width - 1 - radius)
-        const cy = Math.min(Math.max(y, radius), this.height - 1 - radius)
-        const dx = x - cx
-        const dy = y - cy
-        if (dx * dx + dy * dy <= radius * radius) this.set(x, y, color)
-      }
     }
   }
   strokeQuad(q: [number, number][], color: Rgba): void {
@@ -118,8 +106,6 @@ export function createTrayIcon(size = 16): NativeImage {
   const SS = 4
   const big = size * SS
   const buf = new PixelBuffer(big, big)
-  const radius = Math.max(2, Math.round(size / 5)) * SS
-  buf.fillRounded(BG, radius)
 
   // 波形映射：水平留 1px 边距，纵向居中（与 gen-icon.mjs 同法）
   const pad = SS
@@ -129,7 +115,7 @@ export function createTrayIcon(size = 16): NativeImage {
   const yMax = Math.max(...raw.map((p) => p[1]))
   const yShift = big / 2 - (yMin + yMax) / 2
   const pts = raw.map(([x, y]) => [x, y + yShift] as [number, number])
-  const lw = Math.max(2, Math.round(size / 7)) * SS // 16px 下线宽 2px
+  const lw = Math.max(2, Math.round(size / 8)) * SS // 16px 下线宽 2px，无底色故稍细
   for (let i = 0; i + 1 < pts.length; i++) {
     const [x1, y1] = pts[i]!
     const [x2, y2] = pts[i + 1]!
@@ -145,10 +131,10 @@ export function createTrayIcon(size = 16): NativeImage {
         [x2 - nx, y2 - ny],
         [x1 - nx, y1 - ny]
       ],
-      FG
+      WAVE
     )
-    buf.disc(x1, y1, lw / 2, FG)
-    if (i === pts.length - 2) buf.disc(x2, y2, lw / 2, FG)
+    buf.disc(x1, y1, lw / 2, WAVE)
+    if (i === pts.length - 2) buf.disc(x2, y2, lw / 2, WAVE)
   }
 
   // SS×SS 块平均降采样（含 alpha 加权）
