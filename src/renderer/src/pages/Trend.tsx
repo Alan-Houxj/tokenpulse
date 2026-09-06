@@ -52,8 +52,13 @@ export default function Trend(props: {
 
   const bucket = bucketForRange(props.range)
 
+  // 区间/桶变化才显示加载态（图表会整体重建）；tick 静默刷新，
+  // 否则每 5 秒图表卸载重建一次：闪烁、悬停丢失、浮窗 frozen 可能卡死
   useEffect(() => {
     setLoading(true)
+  }, [props.range, bucket])
+
+  useEffect(() => {
     const { from, to } = props.range
     void window.api.getTrendByModel(from, to, bucket).then((m) => {
       setByModel(m)
@@ -133,14 +138,16 @@ export default function Trend(props: {
   }
   const onTipHover = (next: TipState): void => {
     cancelHide()
-    if (frozen) return // 鼠标在浮窗上时不应触发（pointer-events 挡住了），兜底
     if (tip && next.bs === tip.bs) return
     setTip(next)
-    applyPos(next)
+    if (!frozen) applyPos(next) // 冻结时只更新内容不动位置
   }
   const scheduleHide = (): void => {
     cancelHide()
-    hideTimer.current = setTimeout(() => setTip(null), 200)
+    hideTimer.current = setTimeout(() => {
+      setTip(null)
+      setFrozen(false) // 隐藏时一并复位，防止 mouseleave 丢失导致 frozen 卡死
+    }, 200)
   }
   useEffect(() => cancelHide, [])
 
@@ -239,7 +246,7 @@ export default function Trend(props: {
                 data={modelData}
                 margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
                 barCategoryGap="18%"
-                onMouseLeave={scheduleHide}
+
               >
                 <CartesianGrid horizontal vertical={false} stroke="rgba(255,255,255,0.06)" />
                 <XAxis
@@ -371,12 +378,12 @@ function TipPump(props: {
 }): null {
   const { active, payload, label, coordinate, viewBox, onHover, onInactive } = props
   useEffect(() => {
-    if (active && payload && payload.length > 0 && coordinate && payload[0]?.payload?.bs != null) {
+    if (active && payload && payload.length > 0 && payload[0]?.payload?.bs != null) {
       onHover({
         bs: Number(payload[0].payload.bs),
         label: String(label ?? ''),
-        x: coordinate.x,
-        y: coordinate.y,
+        x: coordinate?.x ?? 0,
+        y: coordinate?.y ?? 0,
         chartW: viewBox?.width ?? 0
       })
     } else if (!active) {
