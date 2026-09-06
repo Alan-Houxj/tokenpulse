@@ -320,12 +320,13 @@ body,
   padding: 20px 24px;
 }
 
-/* Caption 级：12px 辅助 */
+/* 与总览 Bento 标签同规格：11px/600/0.12em */
 .stat-title {
-  font-size: 12px;
-  font-weight: 400;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   line-height: 1.5;
-  color: var(--text-tertiary);
+  color: #71717a;
   margin-bottom: 8px;
 }
 
