@@ -329,12 +329,13 @@ body,
   margin-bottom: 8px;
 }
 
-/* Display 级：32px 大数字（等宽由全局提供） */
+/* Display 级：32px 大数字（与总览 Bento 大数字同风格；等宽由全局提供） */
 .stat-value {
   font-size: 32px;
-  font-weight: 500;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   line-height: 1.2;
-  color: var(--text-primary);
+  color: #fafafa;
   margin-bottom: 8px;
 }
 
@@ -782,13 +783,6 @@ tr.overridden td {
   overflow-x: auto; /* 窄窗时双日历可横向滚动 */
 }
 
-.drp-mode {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
 .drp-calendars {
   display: flex;
   gap: 18px;
@@ -996,6 +990,11 @@ tr.overridden td {
   width: 8px;
   height: 8px;
   border-radius: 3px;
+}
+
+/* 全选按钮是中文文案，用正文字体（模型名才是等宽） */
+.model-chip-all {
+  font-family: var(--font-sans);
 }
 
 /* ---------- 控件 ---------- */
@@ -1572,8 +1571,8 @@ tr.row-disabled td:first-child {
 
 .live-meta-model {
   font-size: 12px;
-  font-weight: 400;
-  color: var(--text-tertiary);
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 .live-meta-num {

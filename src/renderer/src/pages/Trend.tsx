@@ -102,7 +102,6 @@ export default function Trend(props: {
         <div className="stat-card">
           <div className="stat-title">区间估算成本</div>
           <div className="stat-value">{formatUSD(cost)}</div>
-          <div className="stat-sub">API 等价估算</div>
         </div>
       </div>
 
@@ -128,19 +127,14 @@ export default function Trend(props: {
               </button>
             )
           })}
-          <button className="model-chip" onClick={() => setEnabled(null)}>
+          <button className="model-chip model-chip-all" onClick={() => setEnabled(null)}>
             全选
           </button>
         </div>
       )}
 
       <section className="panel">
-        <h3>
-          {bucket === 'hour' ? '按小时' : '按天'}消耗分布
-          <span className="muted small" style={{ marginLeft: 10, fontWeight: 400 }}>
-            点上方标签筛选模型
-          </span>
-        </h3>
+        <h3>{bucket === 'hour' ? '按小时' : '按天'}消耗分布</h3>
         {loading ? (
           <p className="muted">加载中…</p>
         ) : modelData.length === 0 || models.length === 0 ? (

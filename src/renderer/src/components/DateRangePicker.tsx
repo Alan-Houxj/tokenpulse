@@ -12,8 +12,6 @@ import {
 const DAY = 86_400_000
 const WEEK_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
-type Mode = 'range' | 'single'
-
 interface Picking {
   start?: number
   end?: number
@@ -22,8 +20,7 @@ interface Picking {
 /**
  * 双日历日期范围选择器。
  * - 左右并排双月历，联动翻页，禁选未来
- * - 时间段模式：起点→终点，悬停预高亮，可同日（0 天区间）
- * - 单日模式：点击即选中并关闭
+ * - 起点→终点，悬停预高亮，可同日（0 天区间）
  * - 快捷档：今日/近三天/近一周/近一月（含今天），点击后日历跳转并高亮
  * - 面板底部：确认 / 清空
  */
@@ -32,7 +29,6 @@ export default function DateRangePicker(props: {
   onChange: (r: DateRange) => void
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
-  const [mode, setMode] = useState<Mode>('range')
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(props.range.from))
   const [picking, setPicking] = useState<Picking>({})
   const [hoverDay, setHoverDay] = useState<number | null>(null)
@@ -65,11 +61,6 @@ export default function DateRangePicker(props: {
   }
 
   const onDayClick = (ts: number): void => {
-    if (mode === 'single') {
-      const d = dayInputValue(ts)
-      apply(customRange(d, d))
-      return
-    }
     if (picking.start == null || (picking.start != null && picking.end != null)) {
       // 新一轮选择（或重选）
       setPicking({ start: ts })
@@ -124,26 +115,6 @@ export default function DateRangePicker(props: {
 
       {open && (
         <div className="drp-panel">
-          <div className="drp-mode">
-            <div className="seg">
-              <button
-                className={`seg-item ${mode === 'range' ? 'active' : ''}`}
-                onClick={() => setMode('range')}
-              >
-                时间段
-              </button>
-              <button
-                className={`seg-item ${mode === 'single' ? 'active' : ''}`}
-                onClick={() => setMode('single')}
-              >
-                单日
-              </button>
-            </div>
-            <span className="muted small">
-              {mode === 'range' ? '点击起点与终点（可同一天）' : '点击日期即选中'}
-            </span>
-          </div>
-
           <div className="drp-calendars">
             <Calendar
               monthStart={viewMonth}
