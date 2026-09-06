@@ -131,10 +131,21 @@ export default function Trend(props: {
     setTip(null) // 维度切换时浮窗数据口径失效，直接收起
   }
 
-  // 浮窗锚定：固定在柱子一侧，靠右边缘时翻转到左侧
+  // 浮窗宽度与容器实测宽度（chart-wrap = svg 实际占位，比 viewBox 更可靠）
+  const wrapRef = useRef<HTMLDivElement | null>(null)
   const TIP_W = 252
-  const tipX =
-    tip != null && tip.x + 14 + TIP_W > tip.chartWidth ? tip.x - 14 - TIP_W : (tip?.x ?? 0) + 14
+  const chartW = wrapRef.current?.clientWidth ?? tip?.chartWidth ?? 0
+  // 浮窗锚定：固定在柱子一侧，靠右边缘翻转到左侧；最终夹紧在 [0, 容器-浮窗宽]，
+  // 窄窗口下翻转后为负也会被拉回，任何情况下不横向溢出图表区
+  const tipX = tip
+    ? Math.max(
+        0,
+        Math.min(
+          tip.x + 14 + TIP_W > chartW ? tip.x - 14 - TIP_W : tip.x + 14,
+          Math.max(0, chartW - TIP_W - 4)
+        )
+      )
+    : 0
 
   // 当前悬停桶的明细（按图例顺序，只含有数据的已启用模型）
   const tipPoints = useMemo(
@@ -209,7 +220,7 @@ export default function Trend(props: {
         ) : modelData.length === 0 || models.length === 0 ? (
           <p className="muted">该区间暂无数据</p>
         ) : (
-          <div className="chart-wrap">
+          <div className="chart-wrap" ref={wrapRef}>
             <ResponsiveContainer width="100%" height={380}>
               <BarChart
                 data={modelData}
@@ -270,7 +281,11 @@ export default function Trend(props: {
             </ResponsiveContainer>
 
             {tip != null && tipPoints.length > 0 && (
-              <div className="trend-tip" style={{ left: tipX, top: 8 }} role="tooltip">
+              <div
+                className={`trend-tip${tipPoints.length > 4 ? ' compact' : ''}`}
+                style={{ left: tipX, top: 8 }}
+                role="tooltip"
+              >
                 <div className="trend-tip-head">
                   {tip.label} · {dim === 'token' ? 'Token 消耗' : '金额消耗'}
                 </div>

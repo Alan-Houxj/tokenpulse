@@ -690,6 +690,25 @@ tr.overridden td {
   line-height: 1.6;
   pointer-events: none;
   z-index: 10;
+  /* 垂直护栏：模型多时高度不超出图表区向下溢出 */
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* 模型 >4 个时收紧行距，尽量塞进图表高度 */
+.trend-tip.compact {
+  line-height: 1.4;
+  padding: 8px 10px 6px;
+}
+
+.trend-tip.compact .trend-tip-sub {
+  font-size: 10px;
+  margin-top: 0;
+}
+
+.trend-tip.compact .trend-tip-model + .trend-tip-model {
+  margin-top: 3px;
 }
 
 .trend-tip-head {
