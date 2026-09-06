@@ -83,7 +83,7 @@ function showMainWindow(): void {
 }
 
 function createTray(): Tray {
-  const t = new Tray(createTrayIcon(16))
+  const t = new Tray(createTrayIcon())
   t.setToolTip('TokenPulse')
   t.setContextMenu(
     Menu.buildFromTemplate([
