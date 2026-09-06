@@ -110,7 +110,18 @@ export default function LiveBoard(props: {
   return (
     <div className="page live-page">
       <header className="live-head">
-        <h1 className="live-title">Agent 实时看板</h1>
+        <div className="live-head-left">
+          <h1 className="live-title">Agent 实时看板</h1>
+          <div className="live-help" tabIndex={0}>
+            <span className="live-help-icon" aria-hidden>
+              ?
+            </span>
+            <div className="live-help-tip">
+              卡片看板只显示最近 1 小时内有活动的会话，停止活动超过 1 小时会话会自动收
+              起；下次发消息后约 5 秒内回来。
+            </div>
+          </div>
+        </div>
       </header>
 
       <div className="live-filters">

@@ -1388,6 +1388,60 @@ tr.row-disabled td:first-child {
   color: var(--text-primary);
 }
 
+/* 标题旁问号：悬停/聚焦显示看板规则说明（自绘面板，非系统 title） */
+.live-head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.live-help {
+  position: relative;
+  display: inline-flex;
+}
+
+.live-help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--text-tertiary);
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-tertiary);
+  cursor: default;
+  user-select: none;
+}
+
+.live-help-tip {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: -12px;
+  width: 280px;
+  padding: 10px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.live-help:hover .live-help-tip,
+.live-help:focus .live-help-tip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .live-count {
   font-size: 14px;
   font-weight: 400;
