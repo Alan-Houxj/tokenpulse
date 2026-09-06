@@ -59,9 +59,15 @@ export const BUILTIN_PRICES: Record<string, ModelPrice> = {
   'qwen3-coder-flash': { input: 0.14, output: 0.56, cacheRead: 0.014, cacheWrite: 0.18 }
 }
 
+/** 入库/展示用模型名规范化：小写 + 去日期后缀（不做价格档位聚拢，保持模型身份）。
+ *  各 Agent 上报大小写不一（ZCode 'GLM-5.3' / Codex 'glm-5.3'），统一后才能正确分组。 */
+export function canonicalModelId(raw: string): string {
+  return raw.toLowerCase().replace(/-\d{8}$/, '').trim()
+}
+
 /** 模型名归一化：小写、去日期后缀、聚拢到价格表档位 */
 export function normalizeModelId(raw: string): string {
-  const s = raw.toLowerCase().replace(/-\d{8}$/, '').trim()
+  const s = canonicalModelId(raw)
 
   // Codex 后台自动审查模型：无公开 API 价，按 gpt-5.3-codex 估算（推断映射）
   if (s === 'codex-auto-review') return 'gpt-5.3-codex'

@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Store } from '../store/sqlite'
 import type { LiveAgentCard, LiveStatus } from '../model/types'
+import { canonicalModelId } from './cost'
 import { readLinesIncremental, parseJsonLine, walkFiles } from '../adapters/util'
 
 const ACTIVITY_WINDOW_MS = 60 * 60_000 // 看板只显示近 1 小时内有活动的会话
@@ -134,7 +135,7 @@ function zcodeSessionCard(db: DatabaseSync, sid: string, now: number): LiveAgent
   const lastActivityTs = Math.max(...(candidates.length > 0 ? candidates : [0]))
   if (lastActivityTs < Date.now() - ACTIVITY_WINDOW_MS) return null
 
-  const model = mu?.model_id ?? undefined
+  const model = mu?.model_id ? canonicalModelId(mu.model_id) : undefined
   const projectName = lastSegment(session?.directory ?? '')
 
   // 当前任务：最近用户消息之后算一个任务；没有则取最近 30 分钟
@@ -299,7 +300,7 @@ function codexFileCard(path: string, size: number, mtimeMs: number, now: number)
       sessionId = String(payload['session_id'] ?? '')
       cwd = typeof payload['cwd'] === 'string' ? payload['cwd'] : cwd
     } else if (type === 'turn_context') {
-      if (typeof payload['model'] === 'string') model = payload['model']
+      if (typeof payload['model'] === 'string') model = canonicalModelId(payload['model'])
       if (typeof payload['cwd'] === 'string') cwd = payload['cwd']
     } else if (type === 'response_item') {
       const ptype = String(payload['type'] ?? '')

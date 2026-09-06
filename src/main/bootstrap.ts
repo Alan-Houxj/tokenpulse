@@ -72,6 +72,13 @@ export function bootstrap(): void {
     console.log('[tokenpulse] 已重置 Codex 位点（旧格式重扫 + WAL 签名修复）')
   }
 
+  // 迁移 v6：模型名统一小写+去日期后缀（'GLM-5.3'/'glm-5.3' 大小写分裂成两行）
+  if (store.getMeta('data_version') !== '6') {
+    const n = store.migrateModelCaseV6()
+    store.setMeta('data_version', '6')
+    if (n > 0) console.log(`[tokenpulse] 已统一 ${n} 条事件的模型名大小写`)
+  }
+
   scheduler = new UsageScheduler({
     adapters,
     store,

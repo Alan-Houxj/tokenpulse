@@ -17,7 +17,7 @@ import type {
   TrendPointByModel,
   UsageEvent
 } from '../model/types'
-import { estimateCost, type PriceTable } from '../engine/cost'
+import { canonicalModelId, estimateCost, type PriceTable } from '../engine/cost'
 import { openOwnDb, type DbDriver } from './dbDriver'
 
 const SCHEMA = `
@@ -142,7 +142,7 @@ export class Store {
       this.db.transaction(() => {
         for (const e of chunk) {
           const r = stmt.run(
-            e.id, e.ts, e.agent, e.sessionId, e.model,
+            e.id, e.ts, e.agent, e.sessionId, canonicalModelId(e.model),
             e.tokens.input, e.tokens.output, e.tokens.reasoning,
             e.tokens.cacheRead, e.tokens.cacheWrite,
             e.costUSD ?? null, e.costEstUSD,
@@ -489,6 +489,22 @@ export class Store {
   /** 迁移 v5：重置 Codex 位点触发全量重扫（旧格式补采，幂等键防重） */
   resetCodexPositionsV5(): number {
     return this.db.prepare(`DELETE FROM file_positions WHERE agent = 'codex'`).run().changes
+  }
+
+  /**
+   * 迁移 v6：模型名统一小写 + 去日期后缀。
+   * v0.1 入库保留源大小写，ZCode 'GLM-5.3' 与 Codex 'glm-5.3' 在模型分布裂成两行。
+   * 价格查表本就先小写归一化，历史 cost_est 无需重算。
+   */
+  migrateModelCaseV6(): number {
+    const rows = this.db.prepare(`SELECT DISTINCT model FROM events`).all() as { model: string }[]
+    const upd = this.db.prepare(`UPDATE events SET model = ? WHERE model = ?`)
+    let changed = 0
+    for (const r of rows) {
+      const c = canonicalModelId(r.model)
+      if (c !== r.model) changed += upd.run(c, r.model).changes
+    }
+    return changed
   }
 
   /**

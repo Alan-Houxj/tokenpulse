@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { Store } from '@core/store/sqlite'
 import type { UsageEvent } from '@core/model/types'
 
@@ -64,7 +65,7 @@ describe('Store', () => {
       ev({ id: 'b:1', agent: 'zcode', ts: base + 2000, model: 'GLM-5.3', tokens: { input: 200, output: 80, reasoning: 20, cacheRead: 1000, cacheWrite: 100 } })
     ])
 
-    const all = store.overview({ from: base, to: base + 2 * day })
+    const all = store.overview({ from: base, to: base + 2 * 86_400_000 })
     expect(all.totals.total).toBe(100 + 50 + 10 + 5 + 200 + 80 + 20 + 1000 + 100)
     expect(all.byAgent.map((a) => a.agent).sort()).toEqual(['codex', 'zcode'])
     const zcode = all.byAgent.find((a) => a.agent === 'zcode')!
@@ -100,7 +101,7 @@ describe('Store', () => {
     ])
     const rows = store.trendByModel({ from: base, to: base + 2 * 86_400_000 }, 'day')
     expect(rows).toHaveLength(3) // GLM 两天 + gpt 一天
-    const glmTotal = rows.filter((r) => r.model === 'GLM-5.3').reduce((s, r) => s + r.total, 0)
+    const glmTotal = rows.filter((r) => r.model === 'glm-5.3').reduce((s, r) => s + r.total, 0)
     expect(glmTotal).toBe(12_400)
     expect(rows.find((r) => r.model === 'gpt-5.1')!.total).toBe(6_200)
   })
@@ -163,5 +164,35 @@ describe('Store', () => {
     store.insertEvents([ev({ id: 'b:1', sessionId: 's9', ts: now - 1000 })])
     const withNull = store.activeSessions(60 * 60_000, now)
     expect(withNull.find((r) => r.sessionId === 's9')!.tokensPerSec).toBeNull()
+  })
+
+  it('模型名大小写合并：GLM-5.3 与 glm-5.3 入库后是同一行', () => {
+    const base = 1_700_000_000_000
+    store.insertEvents([
+      ev({ id: 'z:1', agent: 'zcode', sessionId: 's1', model: 'GLM-5.3' }),
+      ev({ id: 'c:1', agent: 'codex', sessionId: 's2', model: 'glm-5.3' }),
+      ev({ id: 'z:2', agent: 'zcode', sessionId: 's1', model: 'GLM-5.3-20260901' })
+    ])
+    const ov = store.overview({ from: base - 1000, to: base + 2 * 86_400_000 })
+    // 大小写统一、日期后缀剥掉 → 三条合成一行
+    expect(ov.byModel).toHaveLength(1)
+    expect(ov.byModel[0]!.model).toBe('glm-5.3')
+    expect(ov.byModel[0]!.totals.eventCount).toBe(3)
+  })
+
+  it('迁移 v6：存量大小写混合的模型名统一为小写', () => {
+    store.insertEvents([ev({ id: 'z:1', agent: 'zcode', sessionId: 's1', model: 'legacy' })])
+    store.close()
+    const db = new DatabaseSync(join(dir, 'test.db'))
+    db.prepare(
+      `INSERT INTO events (id, ts, agent, session_id, model, input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, cost_est_usd)
+       VALUES ('raw:1', 1, 'zcode', 's1', 'GLM-5.3', 0,0,0,0,0, 0)`
+    ).run()
+    db.close()
+    store = Store.open(join(dir, 'test.db'))
+    const changed = store.migrateModelCaseV6()
+    expect(changed).toBe(1)
+    const ov = store.overview({ from: 0, to: 9e15 })
+    expect(ov.byModel.filter((m) => m.model.includes('5.3')).map((m) => m.model)).toEqual(['glm-5.3'])
   })
 })
