@@ -320,10 +320,6 @@ body,
   padding: 20px 24px;
 }
 
-.stat-card.highlight {
-  border-left: 2px solid var(--accent);
-}
-
 /* Caption 级：12px 辅助 */
 .stat-title {
   font-size: 12px;
@@ -428,55 +424,191 @@ tr.overridden td {
   color: var(--warning);
 }
 
-/* ---------- Agent 分布条 ---------- */
-.agent-bars {
+/* ---------- 总览页：Bento 指标区 + 分布表（独立色板） ---------- */
+/* 页面背景铺满内容区（抵消 .content 的内边距） */
+.overview {
+  background: #0d0d12;
+  margin: -24px -28px -48px;
+  padding: 24px 28px 48px;
+  min-height: 100%;
+}
+
+/* Bento 网格：左大卡占两行，右列两个小卡 */
+.overview .bento {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  grid-auto-rows: 1fr;
+  gap: 12px;
+  max-width: 900px;
+  margin-bottom: 16px;
+}
+
+.overview .bento-main {
+  grid-row: span 2;
+}
+
+@media (max-width: 719px) {
+  .overview .bento {
+    grid-template-columns: 1fr;
+  }
+  .overview .bento-main {
+    grid-row: auto;
+  }
+}
+
+.overview .bento-card {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  padding: 20px;
+  transition: border-color 0.15s ease;
+}
+
+.overview .bento-card:hover {
+  border-color: #3f3f46;
+}
+
+.overview .bento-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: #71717a;
+  margin-bottom: 8px;
+}
+
+.overview .bento-value {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.overview .bento-num {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: #fafafa;
+}
+
+.overview .bento-unit {
+  font-size: 14px;
+  font-weight: 400;
+  color: #a1a1aa;
+}
+
+/* 输入 / 输出 / KV Cache 三行进度条；轨道固定 140px，占比真实比例 */
+.overview .bento-bars {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.agent-bar-row {
-  display: grid;
-  grid-template-columns: 110px 1fr 220px;
   gap: 14px;
-  align-items: center;
+  margin-top: 20px;
 }
 
-.agent-name {
+.overview .bento-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.overview .bento-bar-name {
+  width: 60px;
+  flex: none;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-primary);
+  color: #a1a1aa;
 }
 
-.agent-bar-track {
-  height: 6px;
-  background: var(--bg-raised);
+.overview .bento-bar-track {
+  width: 140px;
+  flex: none;
+  height: 5px;
+  background: #27272a;
   border-radius: 3px;
   overflow: hidden;
 }
 
-.agent-bar-fill {
+.overview .bento-bar-fill {
   height: 100%;
-  background: var(--accent);
   border-radius: 3px;
-  transition: width 0.4s ease;
+  min-width: 2px;
 }
 
-.agent-val {
+.overview .fill-in {
+  background: #3b82f6;
+}
+
+.overview .fill-out {
+  background: #22c55e;
+}
+
+.overview .fill-cache {
+  background: #a855f7;
+}
+
+.overview .bento-bar-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: #d4d4d8;
+}
+
+/* 分布表卡片：与 Bento 同色板，hover 提亮边框 */
+.overview .panel {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  padding: 20px;
+  transition: border-color 0.15s ease;
+}
+
+.overview .panel:hover {
+  border-color: #3f3f46;
+}
+
+.overview .panel h3 {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #d4d4d8;
+}
+
+.overview .data-table th {
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-primary);
-  text-align: right;
+  color: #71717a;
+  background: #1a1a1e;
+  border-bottom: 1px solid #27272a;
 }
 
-.agent-val strong {
-  font-weight: 500;
-  color: var(--text-primary);
+.overview .data-table td {
+  font-weight: 400;
+  color: #d4d4d8;
+  border-bottom: 1px solid #27272a;
 }
 
-.agent-val-cost {
+.overview .data-table td.text {
+  color: #fafafa;
   font-weight: 500;
-  color: var(--warning);
+}
+
+.overview .data-table tbody tr:hover td {
+  background: #1f1f23;
+}
+
+.overview .data-table td.num {
+  color: #d4d4d8;
+}
+
+/* 数值为 0 的单元格降级展示 */
+.overview .data-table td.zero {
+  color: #52525b;
+}
+
+.overview .data-table td.zero.cost-cell {
+  color: #52525b;
+}
+
+.overview .data-table td.cost-cell {
+  font-weight: 600;
 }
 
 /* ---------- 图表 ---------- */
