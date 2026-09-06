@@ -681,16 +681,18 @@ tr.overridden td {
   position: absolute;
   top: 8px;
   width: 252px;
-  padding: 10px 12px 8px;
+  padding: 9px 11px 7px;
   background: #1c2027;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-pop);
   font-size: 12px;
-  line-height: 1.6;
-  pointer-events: none;
+  line-height: 1.5;
+  /* 可交互：鼠标悬到浮窗上不丢、盖住的柱子不会被误触发换柱、滚动条可用 */
+  pointer-events: auto;
+  cursor: default;
   z-index: 10;
-  /* 垂直护栏：模型多时高度不超出图表区向下溢出 */
+  /* 垂直护栏：模型极多时高度不超出图表区（此时滚动条可用） */
   max-height: calc(100% - 16px);
   overflow-y: auto;
   scrollbar-width: thin;

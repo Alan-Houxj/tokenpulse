@@ -298,6 +298,8 @@ export default function Trend(props: {
                 className={`trend-tip${tipPoints.length > 4 ? ' compact' : ''}`}
                 style={{ left: tipX, top: 8 }}
                 role="tooltip"
+                onMouseEnter={cancelHide}
+                onMouseLeave={scheduleHide}
               >
                 <div className="trend-tip-head">
                   {tip.label} · {dim === 'token' ? 'Token 消耗' : '金额消耗'}
