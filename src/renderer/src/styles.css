@@ -694,6 +694,7 @@ tr.overridden td {
   max-height: calc(100% - 16px);
   overflow-y: auto;
   scrollbar-width: thin;
+  transition: top 0.15s ease;
 }
 
 /* 模型 >4 个时收紧行距，尽量塞进图表高度 */

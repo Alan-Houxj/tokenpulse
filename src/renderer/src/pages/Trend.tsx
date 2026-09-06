@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -29,6 +29,7 @@ interface TipState {
   bs: number
   label: string
   x: number
+  y: number
   chartWidth: number
 }
 
@@ -117,7 +118,7 @@ export default function Trend(props: {
   const onTipHover = (next: TipState): void => {
     cancelHide()
     setTip((prev) =>
-      prev && prev.bs === next.bs && prev.x === next.x && prev.chartWidth === next.chartWidth ? prev : next
+      prev && prev.bs === next.bs && prev.x === next.x && prev.y === next.y ? prev : next
     )
   }
   const scheduleHide = (): void => {
@@ -133,6 +134,7 @@ export default function Trend(props: {
 
   // 浮窗宽度与容器实测宽度（chart-wrap = svg 实际占位，比 viewBox 更可靠）
   const wrapRef = useRef<HTMLDivElement | null>(null)
+  const tipRef = useRef<HTMLDivElement | null>(null)
   const TIP_W = 252
   const chartW = wrapRef.current?.clientWidth ?? tip?.chartWidth ?? 0
   // 浮窗锚定：固定在柱子一侧，靠右边缘翻转到左侧；最终夹紧在 [0, 容器-浮窗宽]，
@@ -155,6 +157,16 @@ export default function Trend(props: {
         : byModel.filter((p) => p.bucketStart === tip.bs && effectiveEnabled.has(p.model) && p.total > 0),
     [tip, byModel, effectiveEnabled]
   )
+
+  // 垂直锚定：跟随悬停柱的堆叠顶部，按浮窗实际高度居中后夹紧在图表区内；
+  // 不跟鼠标逐像素动，只在换柱时移动。渲染后按实测高度校准（无闪跳）
+  useLayoutEffect(() => {
+    if (!tip || !tipRef.current || !wrapRef.current) return
+    const h = tipRef.current.offsetHeight
+    const chartH = wrapRef.current.clientHeight
+    const y = Math.max(8, Math.min(tip.y - h / 2, chartH - h - 8))
+    tipRef.current.style.top = `${y}px`
+  }, [tip, tipPoints, dim])
 
   return (
     <div className="page">
@@ -282,6 +294,7 @@ export default function Trend(props: {
 
             {tip != null && tipPoints.length > 0 && (
               <div
+                ref={tipRef}
                 className={`trend-tip${tipPoints.length > 4 ? ' compact' : ''}`}
                 style={{ left: tipX, top: 8 }}
                 role="tooltip"
@@ -353,6 +366,7 @@ function TipPump(props: {
         bs: Number(payload[0].payload.bs),
         label: String(label ?? ''),
         x: coordinate.x,
+        y: coordinate.y,
         chartWidth: viewBox?.width ?? 0
       })
     } else if (!active) {
