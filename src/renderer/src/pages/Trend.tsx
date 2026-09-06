@@ -46,10 +46,9 @@ export default function Trend(props: {
   const [frozen, setFrozen] = useState(false) // 鼠标在浮窗上 → 位置锁死
   const [pos, setPos] = useState<{ left: number; top: number }>({ left: 0, top: 8 })
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingTip = useRef<TipState | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const tipRef = useRef<HTMLDivElement | null>(null)
+  const tipH = useRef(160) // 浮窗实测高度缓存（换柱落位时先估后校准）
 
   const bucket = bucketForRange(props.range)
 
@@ -121,52 +120,34 @@ export default function Trend(props: {
       hideTimer.current = null
     }
   }
-  const cancelSettle = (): void => {
-    if (settleTimer.current) {
-      clearTimeout(settleTimer.current)
-      settleTimer.current = null
-    }
-    pendingTip.current = null
+  // ---- 浮窗定位：悬在柱子正上方（水平居中、底边贴柱顶）。
+  // 从柱子往上走进入浮窗不跨任何柱子，天然无"逃逸"；frozen（鼠标在浮窗上）时位置锁死 ----
+  const TIP_W = 252
+  const applyPos = (t: TipState): void => {
+    const chartW = wrapRef.current?.clientWidth ?? t.chartW
+    const chartH = wrapRef.current?.clientHeight ?? 380
+    const h = tipH.current
+    const left = Math.max(4, Math.min(t.x - TIP_W / 2, chartW - TIP_W - 4))
+    const top = Math.max(8, Math.min(t.y - h - 12, chartH - h - 8))
+    setPos({ left, top })
   }
-  // pump 回调：活跃柱变化。首次出现立即落位；此后换柱需停留 ~280ms 才平移过去
-  //（快速划过不跳），避免"鼠标追浮窗、浮窗往前逃"的死循环
   const onTipHover = (next: TipState): void => {
     cancelHide()
-    if (tip == null) {
-      // 首次出现：同步算好落位，避免从边缘滑入
-      setPos({ left: clampX(next.x, wrapRef.current?.clientWidth ?? next.chartW), top: 8 })
-      setTip(next)
-      return
-    }
-    if (next.bs === tip.bs) {
-      cancelSettle()
-      return
-    }
-    pendingTip.current = next
-    cancelSettle()
-    settleTimer.current = setTimeout(() => {
-      settleTimer.current = null
-      if (pendingTip.current) setTip(pendingTip.current)
-      pendingTip.current = null
-    }, 280)
+    if (frozen) return // 鼠标在浮窗上时不应触发（pointer-events 挡住了），兜底
+    if (tip && next.bs === tip.bs) return
+    setTip(next)
+    applyPos(next)
   }
   const scheduleHide = (): void => {
     cancelHide()
     hideTimer.current = setTimeout(() => setTip(null), 200)
   }
-  useEffect(
-    () => () => {
-      cancelHide()
-      cancelSettle()
-    },
-    []
-  )
+  useEffect(() => cancelHide, [])
 
   const switchDim = (d: Dim): void => {
     setDim(d)
     setTip(null) // 维度切换时浮窗数据口径失效，直接收起
     setFrozen(false)
-    cancelSettle()
   }
 
   // 当前悬停桶的明细（按图例顺序，只含有数据的已启用模型）
@@ -178,35 +159,15 @@ export default function Trend(props: {
     [tip, byModel, effectiveEnabled]
   )
 
-  // ---- 浮窗定位：跟随悬停柱，但 frozen（鼠标在浮窗上）时位置锁死 ----
-  const TIP_W = 252
-  const clampX = (x: number, chartW: number): number =>
-    Math.max(
-      0,
-      Math.min(
-        x + 14 + TIP_W > chartW ? x - 14 - TIP_W : x + 14,
-        Math.max(0, chartW - TIP_W - 4)
-      )
-    )
-  const tipX = useMemo(() => {
-    if (!tip) return 0
-    return clampX(tip.x, wrapRef.current?.clientWidth ?? tip.chartW)
-  }, [tip])
-
-  // 垂直：按浮窗实际高度围绕柱顶居中并夹紧（渲染后校准，无闪跳）
+  // 内容渲染后实测高度；与缓存不符则校准一次位置（换柱通常等高，无可见跳动）
   useLayoutEffect(() => {
-    if (!tip || frozen || !tipRef.current || !wrapRef.current) return
+    if (!tip || !tipRef.current) return
     const h = tipRef.current.offsetHeight
-    const chartH = wrapRef.current.clientHeight
-    const y = Math.max(8, Math.min(tip.y - h / 2, chartH - h - 8))
-    setPos((p) => (p.top === y ? p : { ...p, top: y }))
+    if (h !== tipH.current) {
+      tipH.current = h
+      if (!frozen) applyPos(tip)
+    }
   }, [tip, tipPoints, dim, frozen])
-
-  // 横向：换柱落位时更新 x（frozen 时不更新，锁死在原地）
-  useLayoutEffect(() => {
-    if (!tip || frozen) return
-    setPos((p) => (p.left === tipX ? p : { ...p, left: tipX }))
-  }, [tip, tipX, frozen])
 
   return (
     <div className="page">
@@ -339,9 +300,8 @@ export default function Trend(props: {
                 style={{ left: pos.left, top: pos.top }}
                 role="tooltip"
                 onMouseEnter={() => {
-                  // 悬到浮窗上：位置与内容立即锁死，清除任何待落位的换柱
+                  // 悬到浮窗上：位置与内容立即锁死
                   cancelHide()
-                  cancelSettle()
                   setFrozen(true)
                 }}
                 onMouseLeave={() => {
