@@ -1398,22 +1398,18 @@ tr.row-disabled td:first-child {
 .live-help {
   position: relative;
   display: inline-flex;
+  cursor: help;
 }
 
+/* lucide Info 图标：次级文本色，悬停/聚焦提亮为主文本色 */
 .live-help-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border: 2px solid #d4d4d8;
-  border-radius: 50%;
-  font-size: 9px;
-  font-weight: 500;
-  line-height: 1;
   color: var(--text-secondary);
-  cursor: default;
-  user-select: none;
+  transition: color 0.12s ease;
+}
+
+.live-help:hover .live-help-icon,
+.live-help:focus-visible .live-help-icon {
+  color: var(--text-primary);
 }
 
 .live-help-tip {

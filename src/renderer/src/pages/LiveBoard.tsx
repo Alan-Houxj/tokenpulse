@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Info } from 'lucide-react'
 import type { AgentId, LiveAgentCard, LiveStatus, LiveTimelineItem } from '@core/model/types'
 import { formatTokens, formatUSD } from '../lib/format'
 
@@ -113,9 +114,7 @@ export default function LiveBoard(props: {
         <div className="live-head-left">
           <h1 className="live-title">Agent 实时看板</h1>
           <div className="live-help" tabIndex={0}>
-            <span className="live-help-icon" aria-hidden>
-              ?
-            </span>
+            <Info className="live-help-icon" size={16} strokeWidth={2} aria-hidden />
             <div className="live-help-tip">
               卡片看板只显示最近 1 小时内有活动的会话，停止活动超过 1 小时会话会自动收
               起；下次发消息后约 5 秒内回来。

@@ -1,10 +1,10 @@
 import { nativeImage, type NativeImage } from 'electron'
 
 /**
- * 托盘图标：透明底 + 蓝色脉冲折线（与顶栏 Logo 同一组 WAVE_20 点集）。
- * 不带图像依赖：直接在 RGBA 缓冲区上绘制，4 倍超采样后降采样抗锯齿。
- * 16px 下实底方块会糊成一团，去底只留线条在浅色/深色任务栏上都更清晰；
- * 应用图标（exe/窗口）仍保留蓝底方块，两者刻意不同。
+ * 托盘图标：透明底 + 蓝色心电脉冲细线（#5E9BFA）。
+ * 几何与桌面图标矢量源 build/icon.svg 同一套 48 坐标系点集（改形状两边同步），
+ * 解析几何 + 超采样光栅化，按目标尺寸独立渲染（绝无位图缩放）。
+ * 小尺寸做笔画光学补偿（16px 下线宽 1.5px），保证线条清晰不断。
  */
 
 interface Rgba {
@@ -14,18 +14,19 @@ interface Rgba {
   a?: number
 }
 
-const WAVE: Rgba = { r: 59, g: 130, b: 246 } // blue-500（品牌蓝）
+const WAVE: Rgba = { r: 94, g: 155, b: 250 } // #5E9BFA（定稿，勿改）
+const VB = 48 // 与 icon.svg 相同的 viewBox
 
-// 脉冲波形点集（TitleBar Logo 的 20x20 viewBox 坐标）
-const WAVE_20 = [
-  [1, 10.5],
-  [4.2, 10.5],
-  [6.2, 4.3],
-  [9.4, 16.3],
-  [11.8, 8.3],
-  [13.4, 11.7],
-  [18.4, 11.7]
-] as const
+// 平线 → 主峰(最高) → 深谷(低于基线) → 小次峰 → 平线，水平居中
+const PTS: [number, number][] = [
+  [7, 24],
+  [15, 24],
+  [19.5, 11.5],
+  [23.5, 36.5],
+  [27.5, 18],
+  [30.5, 24],
+  [41, 24]
+]
 
 class PixelBuffer {
   readonly data: Buffer
@@ -74,17 +75,23 @@ class PixelBuffer {
     }
   }
   toNativeImage(): NativeImage {
-    // Electron 在 Windows/Linux 期望 BGRA 字节序，macOS 为 RGBA；内部按 RGBA 绘制，输出前转换
-    if (process.platform === 'darwin') {
-      return nativeImage.createFromBuffer(this.data, { width: this.width, height: this.height })
+    // Electron 期望预乘 alpha（Windows/Linux 字节序为 BGRA，macOS 为 RGBA）；
+    // 内部按直通 RGBA 绘制，输出前先预乘再按平台换序，否则半透明边缘会发白
+    const out = Buffer.from(this.data)
+    for (let i = 0; i < out.length; i += 4) {
+      const a = out[i + 3]!
+      if (a !== 255) {
+        out[i] = Math.round((out[i]! * a) / 255)
+        out[i + 1] = Math.round((out[i + 1]! * a) / 255)
+        out[i + 2] = Math.round((out[i + 2]! * a) / 255)
+      }
+      if (process.platform !== 'darwin') {
+        const r = out[i]!
+        out[i] = out[i + 2]!
+        out[i + 2] = r
+      }
     }
-    const bgra = Buffer.from(this.data)
-    for (let i = 0; i < bgra.length; i += 4) {
-      const r = bgra[i]!
-      bgra[i] = bgra[i + 2]!
-      bgra[i + 2] = r
-    }
-    return nativeImage.createFromBuffer(bgra, { width: this.width, height: this.height })
+    return nativeImage.createFromBuffer(out, { width: this.width, height: this.height })
   }
 }
 
@@ -98,24 +105,15 @@ function pointInQuad(px: number, py: number, q: [number, number][]): boolean {
   return inside
 }
 
-/**
- * 托盘脉冲波形图标。size 为最终逻辑尺寸（Windows 托盘为 16），
- * 内部以 SS 倍超采样绘制再平均降采样，避免小尺寸锯齿。
- */
+/** 托盘图标。size 为最终逻辑尺寸（Windows 托盘为 16），SS 倍超采样抗锯齿。 */
 export function createTrayIcon(size = 16): NativeImage {
   const SS = 4
   const big = size * SS
   const buf = new PixelBuffer(big, big)
 
-  // 波形映射：水平留 1px 边距，纵向居中（与 gen-icon.mjs 同法）
-  const pad = SS
-  const scale = (big - pad * 2) / 19.4
-  const raw: [number, number][] = WAVE_20.map(([x, y]) => [pad + (x - 1) * scale, y * scale])
-  const yMin = Math.min(...raw.map((p) => p[1]))
-  const yMax = Math.max(...raw.map((p) => p[1]))
-  const yShift = big / 2 - (yMin + yMax) / 2
-  const pts = raw.map(([x, y]) => [x, y + yShift] as [number, number])
-  const lw = Math.max(2, Math.round(size / 8)) * SS // 16px 下线宽 2px，无底色故稍细
+  const scale = (size / VB) * SS
+  const pts = PTS.map(([x, y]) => [x * scale, y * scale] as [number, number])
+  const lw = 1.5 * SS // 16px 光学补偿线宽；与 icon.ico 的 16px 条目一致
   for (let i = 0; i + 1 < pts.length; i++) {
     const [x1, y1] = pts[i]!
     const [x2, y2] = pts[i + 1]!
