@@ -8,17 +8,15 @@ import Overview from './pages/Overview'
 import Trend from './pages/Trend'
 import Sessions from './pages/Sessions'
 import LiveBoard from './pages/LiveBoard'
-import Sources from './pages/Sources'
 import Settings from './pages/Settings'
 
-type Page = 'overview' | 'trend' | 'sessions' | 'live' | 'sources' | 'settings'
+type Page = 'overview' | 'trend' | 'sessions' | 'live' | 'settings'
 
 const NAV: { id: Page; label: string }[] = [
   { id: 'overview', label: '总览' },
   { id: 'trend', label: '趋势' },
   { id: 'sessions', label: '会话' },
   { id: 'live', label: '活动看板' },
-  { id: 'sources', label: '数据源' },
   { id: 'settings', label: '设置' }
 ]
 
@@ -96,7 +94,6 @@ export default function App(): React.JSX.Element {
             }}
           />
         )}
-        {page === 'sources' && <Sources />}
         {page === 'settings' && <Settings onReplayOnboarding={() => setOnboarded(false)} />}
       </main>
       </div>

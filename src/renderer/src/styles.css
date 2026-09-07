@@ -1282,7 +1282,7 @@ input[type='date'] {
   gap: 6px;
 }
 
-/* ---------- 数据源页 ---------- */
+/* ---------- 数据源（设置页二级 tab） ---------- */
 .source-row {
   padding: 12px 4px;
   border-bottom: 1px solid var(--border-subtle);
@@ -1290,6 +1290,37 @@ input[type='date'] {
 
 .source-row:last-child {
   border-bottom: none;
+}
+
+/* 重新扫描中：旧行淡出表示正在刷新 */
+.source-row.rescanning {
+  opacity: 0.45;
+  transition: opacity 0.2s ease;
+}
+
+/* 扫描按钮内旋转图标 */
+.spin {
+  animation: tp-spin 0.9s linear infinite;
+}
+
+@keyframes tp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 标题文字 + 行内 Info 帮助图标 */
+.h3-with-info {
+  display: inline-flex;
+}
+
+h3 .live-help {
+  margin-left: 8px;
+}
+
+/* 设置页二级 tab 与内容间距 */
+.settings-tabs {
+  margin-bottom: 16px;
 }
 
 .source-title {

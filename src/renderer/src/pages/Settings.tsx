@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { TokenPulseConfig } from '@core/config'
-import Dropdown, { type DropdownOption } from '../components/Dropdown'
+import { SourcesPanel } from './Sources'
 
 interface PriceRow {
   input: number
@@ -18,18 +18,35 @@ const FIELDS: { key: keyof PriceRow; label: string }[] = [
   { key: 'cacheWrite', label: '缓存写' }
 ]
 
-const INTERVAL_OPTIONS: DropdownOption<string>[] = [
-  { value: '2000', label: '2 秒 · 更实时' },
-  { value: '5000', label: '5 秒 · 推荐' },
-  { value: '15000', label: '15 秒 · 更省' },
-  { value: '60000', label: '60 秒 · 最省' }
-]
+type Tab = 'sources' | 'prices'
 
-/** 设置页：轮询间隔 + 价格表（内置可覆盖 + 自定义新建）+ 数据目录 */
+/** 设置页：二级 tab —— 数据源（探测/路径/采集/引导）与 模型价格 */
 export default function Settings(props: { onReplayOnboarding: () => void }): React.JSX.Element {
+  const [tab, setTab] = useState<Tab>('sources')
+
+  return (
+    <div className="page">
+      <div className="chart-seg settings-tabs">
+        <button className={tab === 'sources' ? 'on' : ''} onClick={() => setTab('sources')}>
+          数据源
+        </button>
+        <button className={tab === 'prices' ? 'on' : ''} onClick={() => setTab('prices')}>
+          模型价格
+        </button>
+      </div>
+      {tab === 'sources' ? (
+        <SourcesPanel onReplayOnboarding={props.onReplayOnboarding} />
+      ) : (
+        <PricePanel />
+      )}
+    </div>
+  )
+}
+
+/** 模型价格：自定义档位 + 内置表覆盖/停用 */
+function PricePanel(): React.JSX.Element {
   const [config, setConfig] = useState<TokenPulseConfig | null>(null)
   const [builtin, setBuiltin] = useState<PriceTable>({})
-  const [interval, setIntervalMs] = useState(5000)
   const [overrides, setOverrides] = useState<Record<string, PriceRow | null>>({})
   const [saved, setSaved] = useState('')
   // 新建自定义档的表单状态
@@ -39,7 +56,6 @@ export default function Settings(props: { onReplayOnboarding: () => void }): Rea
   useEffect(() => {
     void window.api.getConfig().then((c) => {
       setConfig(c)
-      setIntervalMs(c.pollIntervalMs)
       setOverrides(c.priceOverrides ?? {})
     })
     void window.api.getBuiltinPrices().then(setBuiltin)
@@ -68,7 +84,7 @@ export default function Settings(props: { onReplayOnboarding: () => void }): Rea
         b.input === v.input && b.output === v.output && b.cacheRead === v.cacheRead && b.cacheWrite === v.cacheWrite
       if (!isUnchangedBuiltin) cleaned[k] = v
     }
-    void window.api.setConfig({ pollIntervalMs: interval, priceOverrides: cleaned }).then((c) => {
+    void window.api.setConfig({ priceOverrides: cleaned }).then((c) => {
       setConfig(c)
       setOverrides(c.priceOverrides ?? {})
       setSaved('已保存（价格对全部历史立即重算生效）')
@@ -84,23 +100,7 @@ export default function Settings(props: { onReplayOnboarding: () => void }): Rea
   }
 
   return (
-    <div className="page">
-      <section className="panel">
-        <h3>采集</h3>
-        <div className="form-row">
-          <label>轮询间隔</label>
-          <Dropdown
-            width={150}
-            value={String(interval)}
-            options={INTERVAL_OPTIONS}
-            onChange={(v) => setIntervalMs(Number(v))}
-          />
-        </div>
-        <p className="muted small">
-          轮询只对数据文件做属性比对，内容未变时零读取，任何档位的 CPU 开销都可忽略。
-        </p>
-      </section>
-
+    <>
       <section className="panel">
         <h3>自定义模型价格（USD / 1M tokens）</h3>
         <p className="muted small">
@@ -261,34 +261,12 @@ export default function Settings(props: { onReplayOnboarding: () => void }): Rea
         </table>
       </section>
 
-      <section className="panel">
-        <h3>数据与引导</h3>
-        <div className="form-row">
-          <label>应用数据目录</label>
-          <span className="mono small muted">{config ? '点击打开 %APPDATA%\\TokenPulse' : '…'}</span>
-          <button
-            className="small-btn"
-            onClick={() => {
-              void window.api.getUserDataDir().then((d) => window.api.openPath(d))
-            }}
-          >
-            打开
-          </button>
-        </div>
-        <div className="form-row">
-          <label>首启引导</label>
-          <button className="small-btn" onClick={props.onReplayOnboarding}>
-            重看引导
-          </button>
-        </div>
-      </section>
-
       <div className="save-bar">
         {saved && <span className="ok-text small">{saved}</span>}
         <button className="primary" onClick={save}>
           保存设置
         </button>
       </div>
-    </div>
+    </>
   )
 }
