@@ -13,6 +13,7 @@ import type {
 import type { TokenPulseConfig } from '@core/config'
 import type { TickSummary } from '@core/engine/scheduler'
 import type { PriceOverrides } from '@core/engine/cost'
+import type { CollabMessage, CollabRoom, Participant } from '@core/collab/types'
 
 /**
  * 渲染端可用的唯一 API 面。查询走 invoke（带参数校验的薄封装），
@@ -78,7 +79,25 @@ const api = {
     ipcRenderer.invoke('live:timeline', { agent, sessionId }),
   showLogInFolder: (path: string): Promise<boolean> =>
     ipcRenderer.invoke('live:showLog', { path }),
-  copyText: (text: string): Promise<boolean> => ipcRenderer.invoke('live:copy', { text })
+  copyText: (text: string): Promise<boolean> => ipcRenderer.invoke('live:copy', { text }),
+
+  collabPresets: (): Promise<Participant[]> => ipcRenderer.invoke('collab:presets'),
+  collabRooms: (): Promise<CollabRoom[]> => ipcRenderer.invoke('collab:rooms'),
+  collabMessages: (roomId: string): Promise<CollabMessage[]> =>
+    ipcRenderer.invoke('collab:messages', roomId),
+  collabSaveRoom: (
+    room: Partial<CollabRoom>
+  ): Promise<{ ok: boolean; error?: string; room?: CollabRoom }> =>
+    ipcRenderer.invoke('collab:room:save', room),
+  collabDeleteRoom: (roomId: string): Promise<boolean> =>
+    ipcRenderer.invoke('collab:room:delete', roomId),
+  collabSend: (roomId: string, text: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('collab:send', { roomId, text }),
+  onCollabEvent: (callback: (d: { roomId: string }) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, d: { roomId: string }): void => callback(d)
+    ipcRenderer.on('collab:event', listener)
+    return () => ipcRenderer.removeListener('collab:event', listener)
+  }
 }
 
 export type TokenPulseApi = typeof api

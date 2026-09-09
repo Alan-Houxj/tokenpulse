@@ -1282,6 +1282,227 @@ input[type='date'] {
   gap: 6px;
 }
 
+/* ---------- 协作（多 Agent IM） ---------- */
+.collab-head {
+  justify-content: space-between;
+}
+
+.collab-head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.collab-members {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.collab-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.collab-hint {
+  flex-basis: 100%;
+}
+
+.collab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow-y: auto;
+  min-height: 200px;
+  max-height: calc(100vh - 380px);
+}
+
+.collab-empty {
+  text-align: center;
+  margin: auto;
+}
+
+.collab-msg.user .collab-msg-body {
+  margin-left: auto;
+  max-width: 78%;
+  background: var(--accent-subtle);
+  border: 1px solid rgba(91, 140, 255, 0.25);
+  color: var(--text-primary);
+}
+
+.collab-msg.agent .collab-msg-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.collab-msg-body {
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.collab-msg.user {
+  display: flex;
+}
+
+.collab-msg-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.collab-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-tertiary);
+}
+
+.collab-msg-error {
+  color: var(--danger);
+  margin-top: 4px;
+}
+
+.collab-msg-meta {
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.collab-input {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-top: 12px;
+}
+
+.collab-input-box {
+  position: relative;
+  flex: 1;
+}
+
+.collab-input textarea {
+  width: 100%;
+  resize: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 9px 12px;
+  font-family: var(--font-sans);
+}
+
+.collab-input textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.collab-mention {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  padding: 4px;
+  z-index: 20;
+}
+
+.collab-mention button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.collab-mention button:hover {
+  background: var(--hover-overlay);
+}
+
+.collab-error {
+  color: var(--danger);
+  margin-top: 6px;
+}
+
+.collab-editor .form-row input {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+.collab-editor .collab-num {
+  width: 80px;
+}
+
+.collab-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.collab-custom-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.collab-custom-row input {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+.collab-custom-row input:last-of-type {
+  flex: 1;
+}
+
+.collab-editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.collab-welcome {
+  max-width: 640px;
+}
+
+.danger-btn {
+  color: var(--danger);
+}
+
 /* ---------- 数据源（设置页二级 tab） ---------- */
 .source-row {
   padding: 12px 4px;

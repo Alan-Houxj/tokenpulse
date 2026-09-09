@@ -24,6 +24,7 @@ import { createGeminiAdapter, createQwenAdapter } from '@core/adapters/gemini-li
 import { ZCodeAdapter } from '@core/adapters/zcode'
 import type { AgentId, TokenPulseConfig, ProbeResult, SourceAdapter } from '@core/index'
 import { broadcast } from './events'
+import { setupCollab } from './collab'
 import { updateTrayNow } from './trayUpdater'
 
 let store: Store
@@ -103,6 +104,7 @@ export function bootstrap(): void {
   console.log(`[tokenpulse] 启动完成：db=${defaultDbPath(userDataDir)} 轮询=${Math.max(1000, config.pollIntervalMs)}ms`)
 
   registerDataIpc(userDataDir)
+  setupCollab(store)
 }
 
 /** 为"自定义路径校验"按 Agent 造一次性适配器 */

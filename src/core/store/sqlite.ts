@@ -581,6 +581,19 @@ export class Store {
     const v = r?.['m']
     return v == null ? undefined : Number(v)
   }
+
+  /** 协同模块成本回查：某 Agent 在时间窗内的 token 总量与估算成本 */
+  agentWindowUsage(agent: string, from: number, to: number): { tokens: number; costEstUSD: number } {
+    const r = this.db
+      .prepare(
+        `SELECT
+           SUM(input_tokens + output_tokens + reasoning_tokens + cache_read_tokens + cache_write_tokens) t,
+           SUM(cost_est_usd) c
+         FROM events WHERE agent = ? AND ts >= ? AND ts <= ?`
+      )
+      .get(agent, from, to) as { t: number | null; c: number | null }
+    return { tokens: r.t ?? 0, costEstUSD: r.c ?? 0 }
+  }
 }
 
 /** 解析我们自己的库文件默认路径（不依赖 Electron，测试可用） */

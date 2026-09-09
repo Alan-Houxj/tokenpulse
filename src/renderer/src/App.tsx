@@ -8,15 +8,17 @@ import Overview from './pages/Overview'
 import Trend from './pages/Trend'
 import Sessions from './pages/Sessions'
 import LiveBoard from './pages/LiveBoard'
+import Collab from './pages/Collab'
 import Settings from './pages/Settings'
 
-type Page = 'overview' | 'trend' | 'sessions' | 'live' | 'settings'
+type Page = 'overview' | 'trend' | 'sessions' | 'live' | 'collab' | 'settings'
 
 const NAV: { id: Page; label: string }[] = [
   { id: 'overview', label: '总览' },
   { id: 'trend', label: '趋势' },
   { id: 'sessions', label: '会话' },
   { id: 'live', label: '活动看板' },
+  { id: 'collab', label: '协作' },
   { id: 'settings', label: '设置' }
 ]
 
@@ -94,6 +96,7 @@ export default function App(): React.JSX.Element {
             }}
           />
         )}
+        {page === 'collab' && <Collab />}
         {page === 'settings' && <Settings onReplayOnboarding={() => setOnboarded(false)} />}
       </main>
       </div>
