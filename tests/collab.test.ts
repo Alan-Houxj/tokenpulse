@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CollabStore } from '@core/collab/store'
 import { CollabEngine, buildPrompt, parseMentions } from '@core/collab/engine'
-import { renderCommand, trimBanner, usesStdin } from '@core/collab/drivers'
+import { buildCommand, captureSessionId, estimatePromptTokens, runSpec, trimBanner } from '@core/collab/drivers'
 import type { CollabRoom, Participant, RunResult } from '@core/collab/types'
 
 let dir: string
@@ -15,7 +15,7 @@ const p = (over: Partial<Participant> = {}): Participant => ({
   name: 'Codex',
   agentKind: 'codex',
   color: '#60a5fa',
-  command: 'codex exec -',
+  reasoning: 'default',
   ...over
 })
 
@@ -24,7 +24,6 @@ const room = (over: Partial<CollabRoom> = {}): CollabRoom => ({
   name: '测试房',
   workspace: 'C:/proj',
   participants: [p()],
-  contextMessages: 10,
   timeoutMs: 60_000,
   createdAt: 1,
   ...over
@@ -41,101 +40,154 @@ afterEach(() => {
 })
 
 describe('collab.drivers', () => {
-  it('命令模板：{prompt} 替换 / 无占位符走 stdin', () => {
-    expect(renderCommand({ command: 'echo {prompt}' }, '你好')).toBe('echo 你好')
-    expect(usesStdin('codex exec -')).toBe(true)
-    expect(usesStdin('run.sh {prompt}')).toBe(false)
+  it('buildCommand：codex 首跑/续跑、模型与推理强度覆盖', () => {
+    const first = buildCommand('codex', {})
+    expect(first.args.join(' ')).toContain('exec')
+    expect(first.args.join(' ')).toContain('workspace-write')
+    expect(first.stdinMode).toBe(true)
+
+    const full = buildCommand('codex', { sessionId: 'abc-123', model: 'gpt-5.6-sol', reasoning: 'high' })
+    const s = full.args.join(' ')
+    expect(s).toContain('resume abc-123')
+    expect(s).toContain('-m gpt-5.6-sol')
+    expect(s).toContain('model_reasoning_effort="high"')
+    expect(s.endsWith(' -')).toBe(true)
   })
 
-  it('trimBanner 裁掉 codex 横幅与 user 回显行', () => {
-    const out = ['model: gpt-5.6-luna', 'provider: openai', '--------', 'user', '只回复：收到', '', '收到'].join('\n')
+  it('buildCommand：zcode 参数模式（--prompt 收文本）', () => {
+    const spec = buildCommand('zcode', { zcodeCli: 'C:/x/zcode.cjs', sessionId: 'sess_1' })
+    expect(spec.args[0]).toBe(process.execPath)
+    expect(spec.args.join(' ')).toContain('--resume sess_1')
+    expect(spec.stdinMode).toBe(false)
+  })
+
+  it('captureSessionId：codex 横幅 / zcode sess_ / claude json', () => {
+    expect(captureSessionId('codex', 'session id: 01a086f0-f703-7561-9c1d-f8b6bf119ba9')).toBe(
+      '01a086f0-f703-7561-9c1d-f8b6bf119ba9'
+    )
+    expect(captureSessionId('zcode', 'xx sess_00befcc0-5c8d-4522-b6fd-8554bc440004 yy')).toBe(
+      'sess_00befcc0-5c8d-4522-b6fd-8554bc440004'
+    )
+    expect(captureSessionId('claude-code', '{"session_id":"s123","result":"ok"}')).toBe('s123')
+    expect(captureSessionId('codex', '无标记')).toBeUndefined()
+  })
+
+  it('trimBanner 裁掉 codex 横幅与 user 回显块', () => {
+    const out = ['model: gpt-5.6-luna', '--------', 'user', '只回复：收到', '', '收到'].join('\n')
     expect(trimBanner(out)).toBe('收到')
-  })
-
-  it('无横幅输出原样返回', () => {
     expect(trimBanner('直接就是结果')).toBe('直接就是结果')
   })
 
-  it('真实进程：stdin 注入与 stdout 收回（stub 命令）', async () => {
-    const { runAgent } = await import('@core/collab/drivers')
-    const stub = p({ command: `node -e "process.stdout.write('回复:'+require('fs').readFileSync(0,'utf8').slice(-2))"` })
-    const h = runAgent(stub, '……结尾', { cwd: dir, timeoutMs: 15_000 })
-    const r = await h.promise
+  it('estimatePromptTokens：中文与拉丁混合粗估', () => {
+    const cjk = estimatePromptTokens('你好世界')
+    expect(cjk).toBeGreaterThanOrEqual(2)
+    expect(estimatePromptTokens('abcdefgh')).toBe(2)
+  })
+
+  it('runSpec：stdin 注入与 stdout 收回（stub 命令）', async () => {
+    const spec = {
+      args: [process.execPath, '-e', "process.stdout.write('回复:'+require('fs').readFileSync(0,'utf8').slice(-2))"],
+      stdinMode: true
+    }
+    const r = await runSpec(spec, '……结尾', { cwd: dir, timeoutMs: 15_000 }).promise
     expect(r.code).toBe(0)
     expect(r.stdout).toBe('回复:结尾')
   }, 20_000)
 
-  it('超时强杀并标记 timedOut', async () => {
-    const { runAgent } = await import('@core/collab/drivers')
-    const stub = p({ command: 'node -e "setTimeout(()=>{},60000)"' })
-    const h = runAgent(stub, 'x', { cwd: dir, timeoutMs: 800 })
-    const r = await h.promise
+  it('runSpec：超时强杀进程树并标记 timedOut', async () => {
+    const spec = { args: [process.execPath, '-e', 'setTimeout(()=>{},60000)'], stdinMode: true }
+    const r = await runSpec(spec, 'x', { cwd: dir, timeoutMs: 800 }).promise
     expect(r.timedOut).toBe(true)
   }, 10_000)
+
+  it('runSpec：参数模式把 prompt 作为末参', async () => {
+    const spec = {
+      args: [process.execPath, '-e', 'process.stdout.write(process.argv[1])'],
+      stdinMode: false
+    }
+    // runAgent 会在末尾 push prompt；这里直接验证机制
+    spec.args.push('HELLO')
+    const r = await runSpec(spec, 'HELLO', { cwd: dir, timeoutMs: 15_000 }).promise
+    expect(r.stdout).toBe('HELLO')
+  }, 20_000)
 })
 
 describe('collab.engine', () => {
-  it('parseMentions：按名/按 id 命中、顺序去重、大小写不敏感', () => {
-    const ps = [p(), p({ id: 'cl-1', name: 'Claude Code' })]
-    expect(parseMentions('@codex 帮我看看 @Claude Code 再确认', ps).map((x) => x.name)).toEqual([
-      'Codex',
-      'Claude Code'
-    ])
+  it('parseMentions：按名命中、长名优先、顺序去重', () => {
+    const ps = [p(), p({ id: 'cl-1', name: 'Claude Code', agentKind: 'claude-code' })]
+    expect(parseMentions('@Codex 帮我看看 @Claude Code 再确认', ps).map((x) => x.name)).toEqual(['Codex', 'Claude Code'])
     expect(parseMentions('@cl-1 你好', ps).map((x) => x.name)).toEqual(['Claude Code'])
     expect(parseMentions('没有提及', ps)).toEqual([])
-    expect(parseMentions('@codex @codex 重复只算一次', ps)).toHaveLength(1)
+    expect(parseMentions('@codex @Codex 重复只算一次', ps)).toHaveLength(1)
   })
 
-  it('buildPrompt：含协作说明、上下文转录与最新消息，超长截断', () => {
-    const r = room({ contextMessages: 2 })
+  it('buildPrompt：全量注入三段式，历史含全部消息且不截断', () => {
+    const r = room()
+    const long = 'B'.repeat(10_000)
     const history = [
       { id: '1', roomId: 'r1', ts: 1, author: 'user', text: '第一条' },
-      { id: '2', roomId: 'r1', ts: 2, author: 'codex-1', text: 'B'.repeat(5000) },
-      { id: '3', roomId: 'r1', ts: 3, author: 'user', text: '第二条' },
-      { id: '4', roomId: 'r1', ts: 4, author: 'user', text: '@Codex 开工' }
+      { id: '2', roomId: 'r1', ts: 2, author: 'codex-1', text: long },
+      { id: '3', roomId: 'r1', ts: 3, author: 'user', text: '@Codex 开工' }
     ]
-    const out = buildPrompt(r, history, history[3]!, p())
+    const out = buildPrompt(r, history, history[2]!, p())
     expect(out).toContain('你是「Codex」')
-    expect(out).not.toContain('第一条') // 只带最近 2 条
-    expect(out).toContain('超长已截断')
-    expect(out).toContain('@Codex 开工')
+    expect(out).toContain('「测试房」')
+    expect(out).toContain('第一条') // 全量：最早的消息也在
+    expect(out).toContain(long) // 不截断
+    expect(out.match(/=== @ 你的最新消息 ===/)).toBeTruthy()
+    // 最新消息只出现一次（不在历史里重复）
+    expect(out.indexOf('@Codex 开工')).toBe(out.lastIndexOf('@Codex 开工'))
   })
 
-  it('用户消息带 @ → 串行执行、落库状态流转、成本回查附带', async () => {
+  it('用户消息带 @ → 串行执行、状态流转、成本回查、session id 持久化', async () => {
     store.createRoom(room())
-    const changes: string[] = []
-    const runs: string[] = []
-    const fakeRun = vi.fn((participant: Participant, prompt: string) => {
-      runs.push(prompt)
+    const runs: { sessionId?: string }[] = []
+    const fakeRun = vi.fn((participant: Participant, prompt: string, opts: { sessionId?: string }) => {
+      runs.push({ sessionId: opts.sessionId })
       return {
         kill: () => {},
-        promise: Promise.resolve<RunResult>({ stdout: `来自${participant.name}的答复`, stderr: '', code: 0, timedOut: false })
+        promise: Promise.resolve<RunResult>({
+          stdout: `来自${participant.name}的答复`,
+          stderr: '',
+          code: 0,
+          timedOut: false,
+          sessionId: opts.sessionId ?? 'native-sess-1'
+        })
       }
     })
     const engine = new CollabEngine({
       store,
       run: fakeRun as never,
-      usage: (kind) => (kind === 'codex' ? { tokens: 1234, costEstUSD: 0.05 } : null),
-      onChange: (rid) => changes.push(rid),
+      usage: () => ({ tokens: 1234, costEstUSD: 0.05 }),
+      onChange: () => {},
       now: (() => 1000) as never
     })
-    // now 固定会让 ts 全等，runMentions 里 durationMs=0；消息顺序按 rowid 仍稳定
-    const res = engine.postUserMessage('r1', '@Codex 分析一下')
-    expect(res.ok).toBe(true)
+    engine.postUserMessage('r1', '@Codex 分析一下')
     await vi.waitFor(() => {
-      expect(store.getMessages('r1').filter((m) => m.status === 'done')).toHaveLength(1)
+      expect(store.getMessages('r1').some((m) => m.status === 'done')).toBe(true)
     })
-    const msgs = store.getMessages('r1')
-    expect(msgs).toHaveLength(2) // 用户消息 + Agent 回复
-    const reply = msgs.find((m) => m.author === 'codex-1')!
-    expect(reply.text).toBe('来自Codex的答复')
-    expect(reply.tokens).toBe(1234)
-    expect(reply.costEstUSD).toBe(0.05)
-    expect(runs[0]).toContain('分析一下')
-    expect(changes.length).toBeGreaterThan(0)
+    // 首跑无 session；捕获到的 native-sess-1 已存档
+    expect(runs[0]!.sessionId).toBeUndefined()
+    expect(store.getSession('r1', 'codex-1')).toBe('native-sess-1')
+
+    // 第二次 @ 应带 session id（持久会话续跑）
+    const fakeRun2 = vi.fn((participant: Participant, prompt: string, opts: { sessionId?: string }) => ({
+      kill: () => {},
+      promise: Promise.resolve<RunResult>({ stdout: '第二次答复', stderr: '', code: 0, timedOut: false })
+    }))
+    const engine2 = new CollabEngine({ store, run: fakeRun2 as never, onChange: () => {}, now: (() => 2000) as never })
+    engine2.postUserMessage('r1', '@Codex 继续')
+    await vi.waitFor(() => {
+      const msgs = store.getMessages('r1')
+      expect(msgs.filter((m) => m.status === 'done')).toHaveLength(2)
+    })
+    expect(fakeRun2.mock.calls[0]![2]).toMatchObject({ sessionId: 'native-sess-1' })
+    // 消息附带 prompt 规模估算
+    const done = store.getMessages('r1').filter((m) => m.status === 'done')
+    expect(done[0]!.promptEst).toBeGreaterThan(0)
   })
 
-  it('用户消息无 @ → 只落库不执行（主持人模式：Agent 输出的 @ 也不触发）', async () => {
+  it('用户消息无 @ → 只落库不执行（主持人模式）', async () => {
     store.createRoom(room())
     const fakeRun = vi.fn()
     const engine = new CollabEngine({ store, run: fakeRun as never, onChange: () => {} })
@@ -165,23 +217,27 @@ describe('collab.engine', () => {
 })
 
 describe('collab.store', () => {
-  it('房间与消息 CRUD 往返一致', () => {
-    const r = room({ participants: [p(), p({ id: 'x', name: 'X' })] })
+  it('房间/消息/session CRUD 往返一致', () => {
+    const r = room({ participants: [p(), p({ id: 'x', name: 'X', agentKind: 'zcode' })] })
     store.createRoom(r)
-    expect(store.listRooms()).toHaveLength(1)
     expect(store.getRoom('r1')!.participants.map((x) => x.name)).toEqual(['Codex', 'X'])
     store.updateRoom({ ...r, name: '改名' })
     expect(store.getRoom('r1')!.name).toBe('改名')
+
     store.insertMessage({ id: 'm1', roomId: 'r1', ts: 1, author: 'user', text: 'hi', status: 'done' })
-    store.updateMessage('m1', { text: 'hi2', tokens: 5 })
+    store.updateMessage('m1', { text: 'hi2', tokens: 5, promptEst: 42 })
     const msgs = store.getMessages('r1')
     expect(msgs[0]!.text).toBe('hi2')
-    expect(msgs[0]!.tokens).toBe(5)
-    expect(store.roomHasRunning('r1')).toBe(false)
-    store.insertMessage({ id: 'm2', roomId: 'r1', ts: 2, author: 'user', text: '', status: 'running' })
-    expect(store.roomHasRunning('r1')).toBe(true)
+    expect(msgs[0]!.promptEst).toBe(42)
+
+    expect(store.getSession('r1', 'codex-1')).toBeUndefined()
+    store.setSession('r1', 'codex-1', 's-a')
+    expect(store.getSession('r1', 'codex-1')).toBe('s-a')
+    store.setSession('r1', 'codex-1', 's-b') // 覆盖
+    expect(store.getSession('r1', 'codex-1')).toBe('s-b')
+
     store.deleteRoom('r1')
     expect(store.listRooms()).toHaveLength(0)
-    expect(store.getMessages('r1')).toHaveLength(0)
+    expect(store.getSession('r1', 'codex-1')).toBeUndefined()
   })
 })

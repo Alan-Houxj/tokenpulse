@@ -13,7 +13,8 @@ import type {
 import type { TokenPulseConfig } from '@core/config'
 import type { TickSummary } from '@core/engine/scheduler'
 import type { PriceOverrides } from '@core/engine/cost'
-import type { CollabMessage, CollabRoom, Participant } from '@core/collab/types'
+import type { CollabAgentInfo, CollabMessage, CollabRoom, Participant } from '@core/collab/types'
+
 
 /**
  * 渲染端可用的唯一 API 面。查询走 invoke（带参数校验的薄封装），
@@ -81,7 +82,7 @@ const api = {
     ipcRenderer.invoke('live:showLog', { path }),
   copyText: (text: string): Promise<boolean> => ipcRenderer.invoke('live:copy', { text }),
 
-  collabPresets: (): Promise<Participant[]> => ipcRenderer.invoke('collab:presets'),
+  collabAgents: (): Promise<CollabAgentInfo[]> => ipcRenderer.invoke('collab:agents'),
   collabRooms: (): Promise<CollabRoom[]> => ipcRenderer.invoke('collab:rooms'),
   collabMessages: (roomId: string): Promise<CollabMessage[]> =>
     ipcRenderer.invoke('collab:messages', roomId),

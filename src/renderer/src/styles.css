@@ -2313,3 +2313,35 @@ tr.row-disabled td:first-child {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* 协作：参与者设置行（模型/推理强度） */
+.collab-settings {
+  margin: 4px 0 12px;
+}
+
+.collab-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.collab-setting-row input,
+.collab-setting-row select {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+.collab-setting-row input {
+  width: 200px;
+}
+
+.collab-setting-name {
+  width: 100px;
+  flex: none;
+  font-size: 12px;
+}

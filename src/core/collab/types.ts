@@ -2,19 +2,30 @@
 
 import type { AgentId } from '../model/types'
 
-/** 房间参与者：一个绑定了可执行命令的 Agent 席位 */
+/** 推理强度档位（各 Agent 支持子集不同，'default' 表示用 Agent 默认） */
+export type ReasoningLevel = 'default' | 'low' | 'medium' | 'high' | 'max'
+
+/** 可参与协同的 Agent 信息（就绪探测结果，UI 用） */
+export interface CollabAgentInfo {
+  agentKind: AgentId
+  name: string
+  color: string
+  ready: boolean
+  reason?: string
+}
+
+/** 房间参与者：绑定一个受支持的 Agent（不可自定义命令） */
 export interface Participant {
   id: string
+  /** Agent 种类，同时也是监控源标识 */
+  agentKind: AgentId
+  /** 显示名（即 @ 名） */
   name: string
-  /** 用于成本回查的监控源（'codex' 等）；自定义命令无对应监控源用 'custom' */
-  agentKind: AgentId | 'custom'
-  /** 气泡/名字颜色（CSS 色值） */
   color: string
-  /**
-   * 执行命令模板。含 {prompt} 占位符时把完整输入文本替换进去（用户自担引号转义）；
-   * 不含占位符时输入文本通过 stdin 管入（默认、推荐，规避跨 shell 转义）。
-   */
-  command: string
+  /** 覆盖模型（空 = Agent 默认模型） */
+  model?: string
+  /** 推理强度（default = 不传，用 Agent 默认） */
+  reasoning?: ReasoningLevel
 }
 
 export type MessageStatus = 'running' | 'done' | 'error' | 'timeout'
@@ -29,9 +40,11 @@ export interface CollabMessage {
   /** 仅 Agent 消息有状态；用户消息恒视为完成 */
   status?: MessageStatus
   durationMs?: number
-  /** 本次运行的 token / 成本（来自监控库按时间窗回查，custom 无） */
+  /** 本次运行的 token / 成本（来自监控库按时间窗回查） */
   tokens?: number
   costEstUSD?: number
+  /** 注入 prompt 的规模估算（tokens） */
+  promptEst?: number
   error?: string
 }
 
@@ -41,8 +54,6 @@ export interface CollabRoom {
   /** Agent 的执行工作目录 */
   workspace: string
   participants: Participant[]
-  /** @ 触发时附带最近 N 条消息作为上下文 */
-  contextMessages: number
   /** 单次运行超时（毫秒） */
   timeoutMs: number
   createdAt: number
@@ -53,40 +64,36 @@ export interface RunResult {
   stderr: string
   code: number | null
   timedOut: boolean
+  /** 从输出中捕获的原生 session id（可恢复） */
+  sessionId?: string
 }
 
-/** 参与者颜色板（与趋势图分类色同族） */
-export const PARTICIPANT_COLORS = [
-  '#60a5fa',
-  '#34d399',
-  '#a78bfa',
-  '#fbbf24',
-  '#22d3ee',
-  '#f472b6'
-]
+/** 参与者颜色板（与趋势图分类色同族），按 AgentId 固定分配 */
+export const AGENT_COLORS: Record<AgentId, string> = {
+  'claude-code': '#f472b6',
+  codex: '#60a5fa',
+  'gemini-cli': '#34d399',
+  'qwen': '#fbbf24',
+  zcode: '#a78bfa'
+}
 
-/** 内置参与者预设（按本机 CLI 实测的 headless 调用方式） */
-export const PARTICIPANT_PRESETS: Participant[] = [
-  {
-    id: 'preset-codex',
-    name: 'Codex',
-    agentKind: 'codex',
-    color: '#60a5fa',
-    // stdin 模式：- 读 stdin；workspace-write 允许写工作区；exec 本身非交互
-    command: 'codex exec -s workspace-write --skip-git-repo-check -'
-  },
-  {
-    id: 'preset-claude',
-    name: 'Claude Code',
-    agentKind: 'claude-code',
-    color: '#f472b6',
-    command: 'claude -p'
-  },
-  {
-    id: 'preset-gemini',
-    name: 'Gemini CLI',
-    agentKind: 'gemini-cli',
-    color: '#34d399',
-    command: 'gemini --prompt "$(cat)"'
+export const AGENT_NAMES: Record<AgentId, string> = {
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  'gemini-cli': 'Gemini CLI',
+  'qwen': 'Qwen Code',
+  zcode: 'ZCode'
+}
+
+/** 各 Agent 驱动能力（UI 提示用）：模型/推理强度是否支持 CLI 覆盖 */
+export const AGENT_CAPS: Record<AgentId, { model: boolean; reasoning: boolean; note?: string }> = {
+  codex: { model: true, reasoning: true },
+  'claude-code': { model: true, reasoning: false },
+  'gemini-cli': { model: true, reasoning: false },
+  'qwen': { model: true, reasoning: false },
+  zcode: {
+    model: false,
+    reasoning: false,
+    note: 'ZCode headless 暂不支持命令行覆盖模型，使用其默认模型'
   }
-]
+}

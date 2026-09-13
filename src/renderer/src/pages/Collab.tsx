@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LoaderCircle, Plus, Trash2 } from 'lucide-react'
-import type { CollabMessage, CollabRoom, Participant } from '@core/collab/types'
+import type { CollabAgentInfo, CollabMessage, CollabRoom, Participant, ReasoningLevel } from '@core/collab/types'
 import Dropdown from '../components/Dropdown'
 import { formatTokens, formatUSD } from '../lib/format'
 
@@ -10,13 +10,20 @@ interface RoomForm {
   name: string
   workspace: string
   participants: Participant[]
-  contextMessages: number
   timeoutMin: number
 }
 
-/** 协作页：多 Agent 协同 IM（@ 提及召唤，Agent 最终输出回房） */
+const REASONING_OPTIONS = [
+  { value: 'default', label: '默认强度' },
+  { value: 'low', label: 'low' },
+  { value: 'medium', label: 'medium' },
+  { value: 'high', label: 'high' },
+  { value: 'max', label: 'max' }
+]
+
+/** 协作页：多 Agent 协同 IM（@ 提及召唤，Agent 最终输出回房；每个 Agent 在房间内有持久 session） */
 export default function Collab(): React.JSX.Element {
-  const [presets, setPresets] = useState<Participant[]>([])
+  const [agents, setAgents] = useState<CollabAgentInfo[]>([])
   const [rooms, setRooms] = useState<CollabRoom[]>([])
   const [currentId, setCurrentId] = useState<string>('')
   const [messages, setMessages] = useState<CollabMessage[]>([])
@@ -41,7 +48,7 @@ export default function Collab(): React.JSX.Element {
   }
 
   useEffect(() => {
-    void window.api.collabPresets().then(setPresets)
+    void window.api.collabAgents().then(setAgents)
     refreshRooms()
   }, [])
 
@@ -58,13 +65,11 @@ export default function Collab(): React.JSX.Element {
     else setMessages([])
   }, [currentId])
 
-  // 新消息到底部
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
   }, [messages])
 
   const mentionQuery = useMemo(() => {
-    // 输入结尾处于 "@词" 状态时弹提及面板
     const m = /@([\w.-]*)$/.exec(input)
     return m ? m[1]! : null
   }, [input])
@@ -92,7 +97,6 @@ export default function Collab(): React.JSX.Element {
         name: editor.name,
         workspace: editor.workspace,
         participants: editor.participants,
-        contextMessages: editor.contextMessages,
         timeoutMs: Math.round(editor.timeoutMin * 60_000)
       })
       .then((r) => {
@@ -104,6 +108,17 @@ export default function Collab(): React.JSX.Element {
         refreshRooms()
         if (r.room) setCurrentId(r.room.id)
       })
+  }
+
+  const toggleAgent = (a: CollabAgentInfo): void => {
+    if (!editor) return
+    const on = editor.participants.some((p) => p.agentKind === a.agentKind)
+    setEditor({
+      ...editor,
+      participants: on
+        ? editor.participants.filter((p) => p.agentKind !== a.agentKind)
+        : [...editor.participants, { id: `pt-${Date.now()}-${a.agentKind}`, agentKind: a.agentKind, name: a.name, color: a.color, reasoning: 'default' }]
+    })
   }
 
   return (
@@ -130,7 +145,6 @@ export default function Collab(): React.JSX.Element {
                     name: room.name,
                     workspace: room.workspace,
                     participants: room.participants,
-                    contextMessages: room.contextMessages,
                     timeoutMin: Math.round(room.timeoutMs / 6000) / 10
                   })
                 }
@@ -163,7 +177,7 @@ export default function Collab(): React.JSX.Element {
             <input
               type="text"
               value={editor.name}
-              placeholder="如：重构支付模块"
+              placeholder="如：重构支付模块（同时是各 Agent 会话的显示名前缀）"
               onChange={(e) => setEditor({ ...editor, name: e.target.value })}
             />
           </div>
@@ -180,72 +194,68 @@ export default function Collab(): React.JSX.Element {
           <div className="form-row">
             <label>参与者</label>
             <div className="collab-presets">
-              {presets.map((s) => {
-                const on = editor.participants.some((p) => p.name === s.name)
+              {agents.map((a) => {
+                const on = editor.participants.some((p) => p.agentKind === a.agentKind)
                 return (
                   <button
-                    key={s.id}
+                    key={a.agentKind}
                     className={`model-chip ${on ? 'on' : ''}`}
-                    style={on ? { borderColor: s.color } : undefined}
-                    onClick={() =>
-                      setEditor({
-                        ...editor,
-                        participants: on
-                          ? editor.participants.filter((p) => p.name !== s.name)
-                          : [...editor.participants, { ...s, id: `pt-${Date.now()}-${s.name}` }]
-                      })
-                    }
+                    style={on ? { borderColor: a.color } : undefined}
+                    title={a.ready ? undefined : a.reason}
+                    onClick={() => a.ready && toggleAgent(a)}
+                    disabled={!a.ready}
                   >
-                    <span className="chip-dot" style={{ background: on ? s.color : '#475569' }} />
-                    {s.name}
+                    <span className="chip-dot" style={{ background: on ? a.color : '#475569' }} />
+                    {a.name}
+                    {!a.ready && <span className="muted small">（{a.reason}）</span>}
                   </button>
                 )
               })}
             </div>
           </div>
+          {editor.participants.length > 0 && (
+            <div className="collab-settings">
+              {editor.participants.map((p) => (
+                <div key={p.id} className="collab-setting-row">
+                  <span className="collab-setting-name" style={{ color: p.color }}>
+                    {p.name}
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="默认模型"
+                    value={p.model ?? ''}
+                    onChange={(e) =>
+                      setEditor({
+                        ...editor,
+                        participants: editor.participants.map((x) => (x.id === p.id ? { ...x, model: e.target.value } : x))
+                      })
+                    }
+                  />
+                  <select
+                    value={p.reasoning ?? 'default'}
+                    onChange={(e) =>
+                      setEditor({
+                        ...editor,
+                        participants: editor.participants.map((x) =>
+                          x.id === p.id ? { ...x, reasoning: e.target.value as ReasoningLevel } : x
+                        )
+                      })
+                    }
+                  >
+                    {REASONING_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              <p className="muted small">
+                模型留空用 Agent 默认；随时改，下次 @ 生效。模型/强度覆盖仅部分 Agent 支持（如 Codex）。
+              </p>
+            </div>
+          )}
           <div className="form-row">
-            <label>自定义参与者</label>
-            <button onClick={() => setEditor({ ...editor, participants: [...editor.participants, newParticipant()] })}>
-              <Plus size={13} aria-hidden /> 添加
-            </button>
-          </div>
-          {editor.participants
-            .filter((p) => p.agentKind === 'custom' || !presets.some((s) => s.name === p.name))
-            .map((p, i) => (
-              <div key={p.id} className="collab-custom-row">
-                <input
-                  type="text"
-                  placeholder="名字"
-                  value={p.name}
-                  onChange={(e) => updateCustom(editor, setEditor, p.id, { name: e.target.value }, i)}
-                />
-                <input
-                  type="text"
-                  className="mono"
-                  placeholder="命令（无 {prompt} 则输入走 stdin）"
-                  value={p.command}
-                  onChange={(e) => updateCustom(editor, setEditor, p.id, { command: e.target.value }, i)}
-                />
-                <button
-                  className="small-btn danger"
-                  onClick={() =>
-                    setEditor({ ...editor, participants: editor.participants.filter((x) => x.id !== p.id) })
-                  }
-                >
-                  移除
-                </button>
-              </div>
-            ))}
-          <div className="form-row">
-            <label>上下文条数</label>
-            <input
-              type="number"
-              min={2}
-              max={100}
-              className="collab-num"
-              value={editor.contextMessages}
-              onChange={(e) => setEditor({ ...editor, contextMessages: Number(e.target.value) })}
-            />
             <label>超时（分钟）</label>
             <input
               type="number"
@@ -273,17 +283,18 @@ export default function Collab(): React.JSX.Element {
               <span key={p.id} className="collab-member" style={{ borderColor: p.color }}>
                 <span className="chip-dot" style={{ background: p.color }} />
                 {p.name}
+                {p.model && <span className="muted small">{p.model}</span>}
               </span>
             ))}
             <span className="muted small collab-hint">
-              输入 @ 召唤对应 Agent；可同时 @ 多个（按顺序执行）；Agent 之间的 @ 不会自动触发
+              输入 @ 召唤对应 Agent；可同时 @ 多个（按顺序执行）；每个 Agent 在房间内有自己的持久会话
             </span>
           </div>
 
           <div className="collab-list" ref={listRef}>
             {messages.length === 0 && (
               <p className="muted collab-empty">
-                还没有消息。试着发一条：@{room.participants[0]?.name ?? 'Agent'} 看看当前目录的结构，提出重构建议
+                还没有消息。试着发一条：@{room.participants[0]?.name ?? 'Agent'} 看看当前目录的结构，提出建议
               </p>
             )}
             {messages.map((m) => (
@@ -295,7 +306,7 @@ export default function Collab(): React.JSX.Element {
             <div className="collab-input-box">
               <textarea
                 value={input}
-                placeholder={`发消息，@ 名字召唤 Agent…`}
+                placeholder="发消息，@ 名字召唤 Agent…"
                 rows={2}
                 onChange={(e) => {
                   setInput(e.target.value)
@@ -340,8 +351,12 @@ export default function Collab(): React.JSX.Element {
           <h3>Agent 协作房间</h3>
           <p className="muted">
             把本机的多个 Agent 拉进同一间房：你（或 Agent）用 <strong>@名字</strong> 下发任务，
-            Agent 在房间的工作目录里执行，把最终结果带回群里。每条回复自动附带本次运行的 token 消耗与成本估算。
+            Agent 在房间的工作目录里执行，把最终结果带回群里。每个 Agent 在房间内有自己的持久会话，
+            每条回复自动附带本次运行的 token 消耗与成本估算。
           </p>
+          {agents.filter((a) => a.ready).length === 0 && (
+            <p className="warn small">当前没有就绪的 Agent：需要先安装并在数据源页扫描到，才能加入房间。</p>
+          )}
           <button className="primary" onClick={() => setEditor(newForm())}>
             <Plus size={13} aria-hidden /> 新建第一个房间
           </button>
@@ -379,7 +394,8 @@ function MessageBubble(props: { m: CollabMessage; room: CollabRoom }): React.JSX
       {m.status === 'done' && (
         <div className="collab-msg-meta small">
           耗时 {formatDuration(m.durationMs ?? 0)}
-          {m.tokens != null && m.tokens > 0 && <> · {formatTokens(m.tokens)} tokens</>}
+          {m.promptEst != null && <> · 注入 ≈{formatTokens(m.promptEst)} tok</>}
+          {m.tokens != null && m.tokens > 0 && <> · 本次 {formatTokens(m.tokens)} tokens</>}
           {m.costEstUSD != null && m.costEstUSD > 0 && <> · ≈{formatUSD(m.costEstUSD)}</>}
         </div>
       )}
@@ -393,25 +409,5 @@ function formatDuration(ms: number): string {
 }
 
 function newForm(): RoomForm {
-  return { name: '', workspace: '', participants: [], contextMessages: 20, timeoutMin: 10 }
-}
-
-function newParticipant(): Participant {
-  return {
-    id: `pt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    name: '',
-    agentKind: 'custom',
-    color: '#fbbf24',
-    command: ''
-  }
-}
-
-function updateCustom(
-  editor: RoomForm,
-  setEditor: (f: RoomForm) => void,
-  id: string,
-  patch: Partial<Participant>,
-  _i: number
-): void {
-  setEditor({ ...editor, participants: editor.participants.map((p) => (p.id === id ? { ...p, ...patch } : p)) })
+  return { name: '', workspace: '', participants: [], timeoutMin: 10 }
 }

@@ -104,7 +104,7 @@ export function bootstrap(): void {
   console.log(`[tokenpulse] 启动完成：db=${defaultDbPath(userDataDir)} 轮询=${Math.max(1000, config.pollIntervalMs)}ms`)
 
   registerDataIpc(userDataDir)
-  setupCollab(store)
+  setupCollab(store, () => probeAll(buildAdapters({ roots: config.roots })))
 }
 
 /** 为"自定义路径校验"按 Agent 造一次性适配器 */
