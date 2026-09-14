@@ -48,6 +48,40 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: npx electron-builder --publish never
 
+      - name: Runtime smoke test (启动 + 引导日志断言)
+        shell: bash
+        run: |
+          set -u
+          LOG=/tmp/tp-app.log
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            BIN="./dist/win-unpacked/TokenPulse.exe"
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            BIN="./dist/mac/TokenPulse.app/Contents/MacOS/TokenPulse"
+          else
+            BIN="./dist/linux-unpacked/TokenPulse"
+          fi
+          echo "launching: $BIN"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a "$BIN" > "$LOG" 2>&1 &
+          else
+            "$BIN" > "$LOG" 2>&1 &
+          fi
+          APP_PID=$!
+          # 最多等 60s 出现引导完成日志
+          ok=0
+          for i in $(seq 1 60); do
+            if grep -q "启动完成" "$LOG" 2>/dev/null; then ok=1; break; fi
+            if ! kill -0 $APP_PID 2>/dev/null; then break; fi
+            sleep 1
+          done
+          echo "---- app log ----"; cat "$LOG" || true
+          kill $APP_PID 2>/dev/null || true
+          if [ "$ok" != "1" ]; then
+            echo "::error::应用未在 60s 内完成启动（缺『启动完成』日志）"
+            exit 1
+          fi
+          echo "启动验证通过"
+
       - name: Upload artifacts (manual run inspection)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
