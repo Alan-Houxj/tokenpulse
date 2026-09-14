@@ -74,9 +74,17 @@ jobs:
             xvfb-run -a "$BIN" --no-sandbox > "$LOG" 2>&1 &
             APP_PID=$!
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            # 直接执行 .app 内部二进制缺 GUI 启动上下文会在框架初始化阶段挂起；
-            # 经 LaunchServices 启动才能拿到 WindowServer 会话
-            open --env TOKENPULSE_SMOKE_DIR="$SMOKE" ./dist/mac/TokenPulse.app
+            # 直接执行 .app 内层二进制缺 GUI 上下文会在框架初始化挂起；经 LaunchServices 启动
+            open --env TOKENPULSE_SMOKE_DIR="$SMOKE" ./dist/mac/TokenPulse.app 2>&1 | tee -a "$LOG" || true
+            sleep 5
+            {
+              echo "---- 进程 ----"
+              pgrep -fl TokenPulse || echo "（无进程：启动即退）"
+              echo "---- 签名 ----"
+              codesign -dv ./dist/mac/TokenPulse.app 2>&1 | head -3 || true
+              echo "---- 崩溃报告 ----"
+              ls -t ~/Library/Logs/DiagnosticReports/ 2>/dev/null | head -3 || true
+            } >> "$LOG" 2>&1
             APP_PID=""
           else
             "$BIN" > "$LOG" 2>&1 &
