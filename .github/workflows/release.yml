@@ -48,36 +48,45 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: npx electron-builder --publish never
 
-      - name: Runtime smoke test (启动 + 引导日志断言)
+      - name: Runtime smoke test (启动 + userData 落库断言)
         shell: bash
         run: |
           set -u
           LOG=/tmp/tp-app.log
           if [ "$RUNNER_OS" = "Windows" ]; then
             BIN="./dist/win-unpacked/TokenPulse.exe"
+            DB="$APPDATA/TokenPulse/agentmeter.db"
           elif [ "$RUNNER_OS" = "macOS" ]; then
             BIN="./dist/mac/TokenPulse.app/Contents/MacOS/TokenPulse"
+            DB="$HOME/Library/Application Support/TokenPulse/agentmeter.db"
           else
-            BIN="./dist/linux-unpacked/TokenPulse"
+            # Linux 可执行名用包名（小写）
+            BIN="./dist/linux-unpacked/tokenpulse"
+            [ -x "$BIN" ] || BIN="./dist/linux-unpacked/TokenPulse"
+            DB="$HOME/.config/TokenPulse/agentmeter.db"
           fi
           echo "launching: $BIN"
+          rm -f "$DB" "$DB-wal" "$DB-shm"
           if [ "$RUNNER_OS" = "Linux" ]; then
             xvfb-run -a "$BIN" > "$LOG" 2>&1 &
           else
             "$BIN" > "$LOG" 2>&1 &
           fi
           APP_PID=$!
-          # 最多等 60s 出现引导完成日志
+          # 引导必然创建 userData/agentmeter.db；stdout 重定向到文件时 Node 全缓冲，
+          # 日志断言不可靠，改用落库副作用（日志仍打印做辅助诊断）
           ok=0
           for i in $(seq 1 60); do
-            if grep -q "启动完成" "$LOG" 2>/dev/null; then ok=1; break; fi
+            if [ -f "$DB" ]; then ok=1; break; fi
             if ! kill -0 $APP_PID 2>/dev/null; then break; fi
             sleep 1
           done
-          echo "---- app log ----"; cat "$LOG" || true
+          sleep 3
+          echo "---- app log ----"; cat "$LOG" 2>/dev/null || true
+          echo "---- db ----"; ls -la "$DB" 2>/dev/null || echo "（未创建）"
           kill $APP_PID 2>/dev/null || true
           if [ "$ok" != "1" ]; then
-            echo "::error::应用未在 60s 内完成启动（缺『启动完成』日志）"
+            echo "::error::应用未在 60s 内完成启动（userData/agentmeter.db 未创建）"
             exit 1
           fi
           echo "启动验证通过"
