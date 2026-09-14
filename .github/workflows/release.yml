@@ -72,15 +72,21 @@ jobs:
           if [ "$RUNNER_OS" = "Linux" ]; then
             # CI 容器无 userns，chrome-sandbox 不可用（真实桌面无此问题），冒烟关闭沙箱
             xvfb-run -a "$BIN" --no-sandbox > "$LOG" 2>&1 &
+            APP_PID=$!
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            # 直接执行 .app 内部二进制缺 GUI 启动上下文会在框架初始化阶段挂起；
+            # 经 LaunchServices 启动才能拿到 WindowServer 会话
+            open --env TOKENPULSE_SMOKE_DIR="$SMOKE" ./dist/mac/TokenPulse.app
+            APP_PID=""
           else
             "$BIN" > "$LOG" 2>&1 &
+            APP_PID=$!
           fi
-          APP_PID=$!
           # 主判据：boot 探针（bootstrap 完成）；ready 无 boot = 挂在引导，两者皆无 = 未就绪
           ok=0
           for i in $(seq 1 60); do
             if [ -f "$SMOKE/boot" ]; then ok=1; break; fi
-            if ! kill -0 $APP_PID 2>/dev/null; then break; fi
+            if [ -n "$APP_PID" ] && ! kill -0 $APP_PID 2>/dev/null; then break; fi
             sleep 1
           done
           sleep 2
@@ -89,6 +95,8 @@ jobs:
           echo "---- db ----"; ls -la "$DB" 2>/dev/null || echo "（未创建）"
           if [ "$RUNNER_OS" = "Windows" ]; then
             taskkill //PID $APP_PID //T //F >/dev/null 2>&1 || true
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            osascript -e 'quit app "TokenPulse"' >/dev/null 2>&1 || pkill -f TokenPulse.app || true
           else
             kill $APP_PID 2>/dev/null || true
           fi
