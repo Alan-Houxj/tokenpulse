@@ -7,7 +7,7 @@
 本地优先的 AI Agent 消耗监控 · 常驻托盘 · 零配置
 
 [![下载](https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-Releases-blue)](https://github.com/Alan-Houxj/tokenpulse/releases)
-[![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows-informational)](#下载安装)
+[![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-informational)](#下载安装)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 </div>
@@ -33,13 +33,20 @@ TokenPulse 把它们统统读出来，放进一个仪表盘。
 
 ## 下载安装
 
-> **当前版本仅提供 Windows 安装包**，代码跨平台。
-
 1. 进入 [Releases 下载页](https://github.com/Alan-Houxj/tokenpulse/releases)
-2. 展开 Assets，选择：
-   - **`TokenPulse Setup.exe`** — 安装版（推荐，带开始菜单和快捷方式）
-   - **`TokenPulse.exe`** — 便携版（免安装，双击即用）
-3. 首次运行遇到 Windows SmartScreen 提示时：*更多信息 → 仍要运行*（开源应用未购买代码签名的正常现象）
+2. 展开 Assets，按平台选择：
+
+| 平台 | 文件 | 说明 |
+|---|---|---|
+| Windows | `TokenPulse Setup.exe` | 安装版（推荐，带开始菜单和快捷方式） |
+| Windows | `TokenPulse.exe` | 便携版，免安装双击即用 |
+| macOS | `TokenPulse-<版本>.dmg` / `TokenPulse-<版本>-arm64.dmg` | Intel 与 Apple Silicon 双架构 |
+| Linux | `TokenPulse-<版本>.AppImage` | `chmod +x` 后直接运行 |
+| Linux | `tokenpulse_<版本>_amd64.deb` | Debian / Ubuntu 系 |
+
+3. 首次运行的信任提示（应用未购买代码签名，代码全部开源可查）：
+   - **Windows** SmartScreen：*更多信息 → 仍要运行*
+   - **macOS** Gatekeeper：右键点应用 → *打开*，或终端执行 `xattr -cr /Applications/TokenPulse.app`
 
 **装完即用**：不用登录、不用填 API Key、不用选目录——它会自动发现你电脑上装过哪些 Agent 并回填全部历史。数据只存在你本机，没有任何上传。
 
