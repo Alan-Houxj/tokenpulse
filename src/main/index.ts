@@ -1,9 +1,21 @@
 import { app, BrowserWindow, ipcMain, Menu, Tray } from 'electron'
 import { join } from 'node:path'
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { createTrayIcon } from './trayIcon'
 import { bindTray, updateTrayNow } from './trayUpdater'
 import { bootstrap, compactTokens } from './bootstrap'
+
+/** CI 冒烟探针：设置 TOKENPULSE_SMOKE_DIR 时在启动关键阶段落标记文件（用户无感） */
+function smokeMark(stage: string): void {
+  const dir = process.env['TOKENPULSE_SMOKE_DIR']
+  if (!dir) return
+  try {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, stage), String(Date.now()))
+  } catch {
+    /* 探针失败不影响启动 */
+  }
+}
 
 /**
  * 品牌迁移：productName 由 AgentMeter 改为 TokenPulse 后，Electron 的 userData
@@ -114,8 +126,10 @@ if (!gotLock) {
   app.on('second-instance', () => showMainWindow())
 
   void app.whenReady().then(() => {
+    smokeMark('ready')
     migrateOldUserData()
     bootstrap()
+    smokeMark('boot')
 
     mainWindow = createMainWindow()
     tray = createTray()

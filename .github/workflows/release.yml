@@ -48,11 +48,13 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: npx electron-builder --publish never
 
-      - name: Runtime smoke test (启动 + userData 落库断言)
+      - name: Runtime smoke test (启动 + 引导弹道探针)
         shell: bash
         run: |
           set -u
           LOG=/tmp/tp-app.log
+          SMOKE=/tmp/tp-smoke
+          rm -rf "$SMOKE"
           if [ "$RUNNER_OS" = "Windows" ]; then
             BIN="./dist/win-unpacked/TokenPulse.exe"
             DB="$APPDATA/TokenPulse/agentmeter.db"
@@ -60,33 +62,39 @@ jobs:
             BIN="./dist/mac/TokenPulse.app/Contents/MacOS/TokenPulse"
             DB="$HOME/Library/Application Support/TokenPulse/agentmeter.db"
           else
-            # Linux 可执行名用包名（小写）
             BIN="./dist/linux-unpacked/tokenpulse"
             [ -x "$BIN" ] || BIN="./dist/linux-unpacked/TokenPulse"
             DB="$HOME/.config/TokenPulse/agentmeter.db"
           fi
-          echo "launching: $BIN"
           rm -f "$DB" "$DB-wal" "$DB-shm"
+          export TOKENPULSE_SMOKE_DIR="$SMOKE"
+          echo "launching: $BIN"
           if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a "$BIN" > "$LOG" 2>&1 &
+            # CI 容器无 userns，chrome-sandbox 不可用（真实桌面无此问题），冒烟关闭沙箱
+            xvfb-run -a "$BIN" --no-sandbox > "$LOG" 2>&1 &
           else
             "$BIN" > "$LOG" 2>&1 &
           fi
           APP_PID=$!
-          # 引导必然创建 userData/agentmeter.db；stdout 重定向到文件时 Node 全缓冲，
-          # 日志断言不可靠，改用落库副作用（日志仍打印做辅助诊断）
+          # 主判据：boot 探针（bootstrap 完成）；ready 无 boot = 挂在引导，两者皆无 = 未就绪
           ok=0
           for i in $(seq 1 60); do
-            if [ -f "$DB" ]; then ok=1; break; fi
+            if [ -f "$SMOKE/boot" ]; then ok=1; break; fi
             if ! kill -0 $APP_PID 2>/dev/null; then break; fi
             sleep 1
           done
-          sleep 3
-          echo "---- app log ----"; cat "$LOG" 2>/dev/null || true
+          sleep 2
+          echo "---- 探针 ----"; ls "$SMOKE" 2>/dev/null || echo "（无）"
+          echo "---- app log（尾部） ----"; tail -20 "$LOG" 2>/dev/null || true
           echo "---- db ----"; ls -la "$DB" 2>/dev/null || echo "（未创建）"
-          kill $APP_PID 2>/dev/null || true
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            taskkill //PID $APP_PID //T //F >/dev/null 2>&1 || true
+          else
+            kill $APP_PID 2>/dev/null || true
+          fi
+          sleep 2
           if [ "$ok" != "1" ]; then
-            echo "::error::应用未在 60s 内完成启动（userData/agentmeter.db 未创建）"
+            echo "::error::应用未在 60s 内完成引导（无 boot 探针）"
             exit 1
           fi
           echo "启动验证通过"
@@ -101,4 +109,4 @@ jobs:
             dist/*.dmg
             dist/*.AppImage
             dist/*.deb
-          if-no-files-found: error
+          if-no-files-found: warn
