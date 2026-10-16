@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Info } from 'lucide-react'
-import type { AgentId, LiveAgentCard, LiveStatus, LiveTimelineItem } from '@core/model/types'
+import { AGENT_NAMES, type AgentId, type LiveAgentCard, type LiveStatus, type LiveTimelineItem } from '@core/model/types'
 import { formatTokens, formatUSD } from '../lib/format'
 
 type FilterId = 'all' | 'running' | 'idle' | 'error'
@@ -386,14 +386,7 @@ function EmptyState(): React.JSX.Element {
 }
 
 function agentLabel(agent: string): string {
-  const map: Record<string, string> = {
-    'claude-code': 'Claude Code',
-    codex: 'Codex',
-    'gemini-cli': 'Gemini CLI',
-    qwen: 'Qwen Code',
-    zcode: 'ZCode'
-  }
-  return map[agent] ?? agent
+  return AGENT_NAMES[agent as AgentId] ?? agent
 }
 
 function formatElapsed(ms: number): string {

@@ -19,6 +19,7 @@ import type {
 } from '../model/types'
 import { canonicalModelId, estimateCost, normalizeModelId, type PriceTable } from '../engine/cost'
 import { openOwnDb, type DbDriver } from './dbDriver'
+import { AGENT_NAMES } from '../model/types'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS events (
@@ -79,16 +80,8 @@ function toTotals(r: Record<string, unknown> | undefined): TokenTotals {
   }
 }
 
-const AGENT_DISPLAY: Record<AgentId, string> = {
-  'claude-code': 'Claude Code',
-  codex: 'Codex',
-  'gemini-cli': 'Gemini CLI',
-  qwen: 'Qwen Code',
-  zcode: 'ZCode'
-}
-
 export function agentDisplayName(agent: AgentId): string {
-  return AGENT_DISPLAY[agent] ?? agent
+  return AGENT_NAMES[agent] ?? agent
 }
 
 const TOTALS_SQL = `
@@ -121,6 +114,10 @@ export class Store {
 
   close(): void {
     this.db.close()
+  }
+
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)
   }
 
   // ---------- 写入 ----------
@@ -352,7 +349,7 @@ export class Store {
         COUNT(*) AS event_count,
         GROUP_CONCAT(DISTINCT model) AS models,
         (SELECT project_path FROM events e2
-          WHERE e2.session_id = events.session_id AND e2.project_path IS NOT NULL
+          WHERE e2.agent = events.agent AND e2.session_id = events.session_id AND e2.project_path IS NOT NULL
           LIMIT 1) AS project_path
       FROM events ${w}
       GROUP BY agent, session_id
@@ -391,8 +388,8 @@ export class Store {
       .prepare(
         `SELECT agent, session_id, MAX(ts) AS last_ts,
            SUM(input_tokens+output_tokens+reasoning_tokens+cache_read_tokens+cache_write_tokens) AS tokens,
-           (SELECT model FROM events e2 WHERE e2.session_id = events.session_id ORDER BY e2.ts DESC LIMIT 1) AS model,
-           (SELECT project_path FROM events e3 WHERE e3.session_id = events.session_id AND e3.project_path IS NOT NULL LIMIT 1) AS project_path
+           (SELECT model FROM events e2 WHERE e2.agent = events.agent AND e2.session_id = events.session_id ORDER BY e2.ts DESC LIMIT 1) AS model,
+           (SELECT project_path FROM events e3 WHERE e3.agent = events.agent AND e3.session_id = events.session_id AND e3.project_path IS NOT NULL LIMIT 1) AS project_path
          FROM events WHERE ts >= ?
          GROUP BY agent, session_id ORDER BY last_ts DESC LIMIT 20`
       )
@@ -442,9 +439,9 @@ export class Store {
           input_tokens + output_tokens + reasoning_tokens + cache_read_tokens + cache_write_tokens ELSE 0 END) AS dur_tokens,
         SUM(CASE WHEN duration_ms > 0 THEN duration_ms ELSE 0 END) AS dur_ms,
         (SELECT model FROM events e2
-          WHERE e2.session_id = events.session_id ORDER BY e2.ts DESC LIMIT 1) AS model,
+          WHERE e2.agent = events.agent AND e2.session_id = events.session_id ORDER BY e2.ts DESC LIMIT 1) AS model,
         (SELECT project_path FROM events e2
-          WHERE e2.session_id = events.session_id AND e2.project_path IS NOT NULL LIMIT 1) AS project_path
+          WHERE e2.agent = events.agent AND e2.session_id = events.session_id AND e2.project_path IS NOT NULL LIMIT 1) AS project_path
       FROM events WHERE ts >= ${Math.floor(since)}
       GROUP BY agent, session_id
       ORDER BY last_ts DESC

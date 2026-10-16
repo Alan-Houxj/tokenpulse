@@ -1,22 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Info, LoaderCircle } from 'lucide-react'
-import type { AgentId, ProbeResult } from '@core/model/types'
+import { AGENT_NAMES, type AgentId, type ProbeResult } from '@core/model/types'
 import Dropdown, { type DropdownOption } from '../components/Dropdown'
 import { formatBytes, formatTs } from '../lib/format'
 
-const AGENTS: { id: AgentId; label: string }[] = [
-  { id: 'claude-code', label: 'Claude Code' },
-  { id: 'codex', label: 'Codex' },
-  { id: 'gemini-cli', label: 'Gemini CLI' },
-  { id: 'qwen', label: 'Qwen Code' },
-  { id: 'zcode', label: 'ZCode' }
-]
+const AGENTS = Object.entries(AGENT_NAMES).map(([id, label]) => ({ id: id as AgentId, label }))
 
 const STATUS_LABEL: Record<ProbeResult['status'], string> = {
   ok: '正常',
-  absent: '未安装',
+  absent: '未检测到',
   empty: '为空',
-  unrecognized: '格式不识别'
+  unrecognized: '格式不识别',
+  unsupported: '用量不可用'
 }
 
 const INTERVAL_OPTIONS: DropdownOption<string>[] = [
@@ -151,13 +146,16 @@ export function SourcesPanel(props: { onReplayOnboarding: () => void }): React.J
           数据不在默认位置（便携版 Agent、自定义 HOME 等）时在这里补充。校验通过后保存，重启应用生效。
         </p>
         <div className="custom-root-form">
-          <select value={customAgent} onChange={(e) => setCustomAgent(e.target.value as AgentId)}>
-            {AGENTS.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.label}
-              </option>
-            ))}
-          </select>
+          <Dropdown
+            width={170}
+            value={customAgent}
+            options={AGENTS.map((agent) => ({ value: agent.id, label: agent.label }))}
+            onChange={(agent) => {
+              setCustomAgent(agent)
+              setValidateResult(null)
+              setSavedHint('')
+            }}
+          />
           <input
             type="text"
             placeholder="例如 D:\\PortableClaude\\.claude"
@@ -179,7 +177,9 @@ export function SourcesPanel(props: { onReplayOnboarding: () => void }): React.J
               ? `✓ 有效：发现 ${validateResult.fileCount} 个数据文件（${formatBytes(validateResult.sizeBytes)}）`
               : validateResult.status === 'empty'
                 ? '⚠ 目录有效但暂无数据文件'
-                : `✗ ${validateResult.detail ?? '未识别出记录文件'}`}
+                : validateResult.status === 'unsupported'
+                  ? validateResult.detail ?? '此目录没有可读取的 token 用量记录'
+                  : `✗ ${validateResult.detail ?? '未识别出记录文件'}`}
             {validateResult.status === 'ok' && (
               <button className="small-btn" onClick={saveRoot}>
                 保存到配置

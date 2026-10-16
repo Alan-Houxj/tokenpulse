@@ -7,6 +7,7 @@ import {
   Store,
   defaultDbPath,
   buildAdapters,
+  buildAdapter,
   UsageScheduler,
   probeAll,
   probeRoot,
@@ -18,11 +19,9 @@ import {
   PRICES_VERSION
 } from '@core/index'
 import type { PriceOverrides } from '@core/engine/cost'
-import { ClaudeCodeAdapter } from '@core/adapters/claude-code'
-import { CodexAdapter } from '@core/adapters/codex'
-import { createGeminiAdapter, createQwenAdapter } from '@core/adapters/gemini-like'
 import { ZCodeAdapter } from '@core/adapters/zcode'
-import type { AgentId, TokenPulseConfig, ProbeResult, SourceAdapter } from '@core/index'
+import { migrateData } from '@core/engine/migrations'
+import type { AgentId, TokenPulseConfig, ProbeResult } from '@core/index'
 import { broadcast } from './events'
 import { updateTrayNow } from './trayUpdater'
 
@@ -44,40 +43,7 @@ export function bootstrap(): void {
     if (n > 0) console.log(`[tokenpulse] 价格表更新，已重算 ${n} 条历史事件的估算成本`)
   }
 
-  // 数据口径修正 v2：ZCode input 含缓存读的历史事件拆分 + 成本重算
-  if (store.getMeta('data_version') !== '2' && store.getMeta('data_version') !== '3') {
-    const n = store.migrateZcodeInputV2()
-    store.recomputeCosts(effectivePriceTable(config.priceOverrides))
-    if (n > 0) console.log(`[tokenpulse] 已修正 ${n} 条 ZCode 历史事件的输入口径（缓存双计）`)
-  }
-
-  // 迁移 v3：清除 unknown 模型事件（增量状态丢失 bug 的存量），重置位点重新回填
-  if (store.getMeta('data_version') !== '3') {
-    const { removedEvents } = store.migrateUnknownModelsV3()
-    store.setMeta('data_version', '3')
-    if (removedEvents > 0) console.log(`[tokenpulse] 已清理 ${removedEvents} 条 unknown 模型事件，将重新回填`)
-  }
-
-  // 迁移 v4：ZCode 项目路径 JOIN 列名修复，重采带回 project_path
-  if (store.getMeta('data_version') !== '4' && store.getMeta('data_version') !== '5') {
-    const n = store.migrateZcodePathsV4()
-    if (n > 0) console.log(`[tokenpulse] 已重置 ${n} 条 ZCode 事件以回填项目路径`)
-  }
-
-  // 迁移 v5：Codex 旧格式（token_count）解析已支持 + ZCode WAL 签名修复，
-  // 重置 codex 位点重新全量扫描（幂等键保护不重复入库）
-  if (store.getMeta('data_version') !== '5') {
-    store.resetCodexPositionsV5()
-    store.setMeta('data_version', '5')
-    console.log('[tokenpulse] 已重置 Codex 位点（旧格式重扫 + WAL 签名修复）')
-  }
-
-  // 迁移 v6：模型名统一小写+去日期后缀（'GLM-5.3'/'glm-5.3' 大小写分裂成两行）
-  if (store.getMeta('data_version') !== '6') {
-    const n = store.migrateModelCaseV6()
-    store.setMeta('data_version', '6')
-    if (n > 0) console.log(`[tokenpulse] 已统一 ${n} 条事件的模型名大小写`)
-  }
+  migrateData(store, effectivePriceTable(config.priceOverrides))
 
   scheduler = new UsageScheduler({
     adapters,
@@ -103,22 +69,6 @@ export function bootstrap(): void {
   console.log(`[tokenpulse] 启动完成：db=${defaultDbPath(userDataDir)} 轮询=${Math.max(1000, config.pollIntervalMs)}ms`)
 
   registerDataIpc(userDataDir)
-}
-
-/** 为"自定义路径校验"按 Agent 造一次性适配器 */
-function buildSingleAdapter(agent: AgentId, roots: string[]): SourceAdapter {
-  switch (agent) {
-    case 'claude-code':
-      return new ClaudeCodeAdapter({ roots })
-    case 'codex':
-      return new CodexAdapter({ roots })
-    case 'gemini-cli':
-      return createGeminiAdapter(roots)
-    case 'qwen':
-      return createQwenAdapter(roots)
-    case 'zcode':
-      return new ZCodeAdapter({ dbPath: roots[0] ?? '' })
-  }
 }
 
 function registerDataIpc(userDataDir: string): void {
@@ -201,7 +151,9 @@ function registerDataIpc(userDataDir: string): void {
   })
 
   ipcMain.handle('root:validate', (_e, p: { agent: AgentId; path: string }): Promise<ProbeResult> =>
-    probeRoot((root) => buildSingleAdapter(p.agent, [root]), String(p.path))
+    probeRoot((root) => p.agent === 'zcode'
+      ? new ZCodeAdapter({ dbPath: root })
+      : buildAdapter(p.agent, [root]), String(p.path))
   )
 
   ipcMain.handle('prices:builtin', () => BUILTIN_PRICES)

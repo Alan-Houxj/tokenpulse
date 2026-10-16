@@ -1,16 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { AgentId, SessionRow } from '@core/model/types'
+import { AGENT_NAMES, type AgentId, type SessionRow } from '@core/model/types'
 import type { DateRange } from '../lib/daterange'
 import { formatTokens, formatTs, formatUSD } from '../lib/format'
 import Dropdown, { type DropdownOption } from '../components/Dropdown'
 
 const AGENT_OPTIONS: DropdownOption<string>[] = [
   { value: '', label: '全部 Agent' },
-  { value: 'claude-code', label: 'Claude Code' },
-  { value: 'codex', label: 'Codex' },
-  { value: 'gemini-cli', label: 'Gemini CLI' },
-  { value: 'qwen', label: 'Qwen Code' },
-  { value: 'zcode', label: 'ZCode' }
+  ...Object.entries(AGENT_NAMES).map(([value, label]) => ({ value, label }))
 ]
 
 /** 会话明细：Agent / 模型筛选（日期在顶栏）；initialAgentFilter 供活动看板跳转联动 */
@@ -132,7 +128,7 @@ function agentShort(agent: AgentId | string): string {
     qwen: 'Qwen',
     zcode: 'ZCode'
   }
-  return map[agent] ?? agent
+  return map[agent] ?? AGENT_NAMES[agent as AgentId] ?? agent
 }
 
 function lastSegment(path: string): string {

@@ -10,6 +10,7 @@ import { existsSync } from 'node:fs'
 import { statSync } from 'node:fs'
 
 export async function probeAdapter(adapter: SourceAdapter): Promise<ProbeResult> {
+  if (adapter.probe) return adapter.probe()
   const roots = adapter.defaultRoots()
   const existingRoot = roots.find((r) => {
     try {

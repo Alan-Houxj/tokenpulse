@@ -3,7 +3,28 @@
  * 所有 Agent 的用量最终都归一化为 UsageEvent，一层改动全局生效。
  */
 
-export type AgentId = 'claude-code' | 'codex' | 'gemini-cli' | 'qwen' | 'zcode'
+export type AgentId =
+  | 'claude-code'
+  | 'codex'
+  | 'gemini-cli'
+  | 'qwen'
+  | 'zcode'
+  | 'dsh'
+  | 'claude-desktop'
+  | 'kimi-desktop'
+  | 'kimi-code'
+
+export const AGENT_NAMES: Record<AgentId, string> = {
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  'gemini-cli': 'Gemini CLI',
+  qwen: 'Qwen Code',
+  zcode: 'ZCode',
+  dsh: 'DSH',
+  'claude-desktop': 'Claude Desktop',
+  'kimi-desktop': 'Kimi Desktop',
+  'kimi-code': 'Kimi Code'
+}
 
 /** 归一化 token 口径：input 恒为「非缓存输入」（Codex/Gemini 的原始口径需减去 cached） */
 export interface TokenBreakdown {
@@ -15,7 +36,7 @@ export interface TokenBreakdown {
 }
 
 export interface UsageEvent {
-  /** 幂等键 `${agent}:${sessionId}:${requestId}`，重复采集安全 */
+  /** 原生请求的稳定幂等键；共享记录格式可共用命名空间，避免桌面端/CLI 镜像双计。 */
   id: string
   /** epoch 毫秒（事件发生时间） */
   ts: number
@@ -31,8 +52,8 @@ export interface UsageEvent {
   projectPath?: string
 }
 
-/** 数据源探测四态 */
-export type ProbeStatus = 'ok' | 'absent' | 'empty' | 'unrecognized'
+/** unsupported 表示识别到客户端，但没有可读取的用量记录。 */
+export type ProbeStatus = 'ok' | 'absent' | 'empty' | 'unrecognized' | 'unsupported'
 
 export interface ProbeResult {
   agent: AgentId
@@ -64,6 +85,8 @@ export interface ReadResult {
    * 下次增量读取时原样传回——解决跨增量段的行内状态丢失。
    */
   state?: unknown
+  /** 格式已识别但可能尚无用量；不能据此生成零用量事件。 */
+  recognized?: boolean
 }
 
 /**
@@ -77,6 +100,8 @@ export interface SourceAdapter {
   defaultRoots(): string[]
   /** 扫描数据根，返回当前全部数据文件快照 */
   discover(): DiscoveredFile[]
+  /** 状态依赖文件头、压缩帧或客户端能力时，由适配器自行探测。 */
+  probe?(): Promise<ProbeResult>
   /**
    * 增量读取单个文件。文件被截断/轮换（size < offset）时适配器应自行重置。
    * state 为上次读取结束时的解析状态（可为 undefined）。

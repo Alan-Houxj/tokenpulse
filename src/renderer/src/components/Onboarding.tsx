@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ProbeResult } from '@core/model/types'
+import { AGENT_NAMES, type ProbeResult } from '@core/model/types'
 import { formatBytes, formatTs } from '../lib/format'
 
 const STATUS_META: Record<
@@ -7,9 +7,10 @@ const STATUS_META: Record<
   { icon: string; label: string; cls: string }
 > = {
   ok: { icon: '✓', label: '已检测到', cls: 'ok' },
-  absent: { icon: '✗', label: '未安装', cls: 'muted' },
+  absent: { icon: '✗', label: '未检测到', cls: 'muted' },
   empty: { icon: '⚠', label: '目录为空', cls: 'warn' },
-  unrecognized: { icon: '✗', label: '格式不识别', cls: 'err' }
+  unrecognized: { icon: '✗', label: '格式不识别', cls: 'err' },
+  unsupported: { icon: 'i', label: '用量不可用', cls: 'warn' }
 }
 
 /** 首启引导：逐源展示探测结果（开箱即用的"确认感"环节） */
@@ -62,11 +63,11 @@ export default function Onboarding(props: { onDone: () => void }): React.JSX.Ele
 
         {probes != null && !hasAny && (
           <div className="onboarding-empty">
-            <p>未检测到任何支持的 Agent。安装任一支持的 Agent 后重开本应用即可自动识别：</p>
+            <p>暂未发现可统计的本地用量记录。</p>
             <p className="muted small">
-              Claude Code · Codex CLI · Gemini CLI · Qwen Code · ZCode
+              {Object.values(AGENT_NAMES).join(' · ')}
               <br />
-              也可以到「数据源」页手动指定已有数据的目录。
+              也可以到「设置 → 数据源」手动指定已有记录的目录。
             </p>
           </div>
         )}
@@ -79,7 +80,7 @@ export default function Onboarding(props: { onDone: () => void }): React.JSX.Ele
             {hasAny ? `进入仪表盘（后台回填 ${detected.length} 个数据源的历史）` : '进入仪表盘'}
           </button>
           <span className="muted small">
-            {hasAny ? '历史数据回填在后台进行，无需等待' : '随时可在「数据源」页重新扫描'}
+            {hasAny ? '历史数据回填在后台进行，无需等待' : '随时可在「设置 → 数据源」重新扫描'}
           </span>
         </div>
       </div>

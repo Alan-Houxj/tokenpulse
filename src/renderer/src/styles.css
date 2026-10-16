@@ -1351,7 +1351,8 @@ h3 .live-help {
   font-size: 13px;
 }
 .validate-result.ok { color: var(--success); }
-.validate-result.empty { color: var(--warning); }
+.validate-result.empty,
+.validate-result.unsupported { color: var(--warning); }
 .validate-result.absent,
 .validate-result.unrecognized { color: var(--danger); }
 
@@ -1369,6 +1370,8 @@ h3 .live-help {
 
 .onboarding {
   width: min(620px, 92vw);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
@@ -1443,11 +1446,14 @@ h3 .live-help {
   background: rgba(52, 211, 153, 0.1);
   border-color: rgba(52, 211, 153, 0.25);
 }
+.probe-tag.empty,
+.probe-tag.unsupported,
 .probe-tag.warn {
   color: var(--warning);
   background: rgba(251, 191, 36, 0.1);
   border-color: rgba(251, 191, 36, 0.25);
 }
+.probe-tag.unrecognized,
 .probe-tag.err {
   color: var(--danger);
   background: rgba(248, 113, 113, 0.1);

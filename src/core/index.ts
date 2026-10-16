@@ -1,12 +1,15 @@
 export * from './model/types'
 export { Store, defaultDbPath, agentDisplayName } from './store/sqlite'
 export type { DbDriver } from './store/dbDriver'
-export { buildAdapters } from './adapters/registry'
+export { buildAdapter, buildAdapters } from './adapters/registry'
 export type { AdapterOverrides } from './adapters/registry'
 export { ClaudeCodeAdapter } from './adapters/claude-code'
 export { CodexAdapter } from './adapters/codex'
 export { createGeminiAdapter, createQwenAdapter, GeminiLikeAdapter } from './adapters/gemini-like'
 export { ZCodeAdapter } from './adapters/zcode'
+export { DshAdapter } from './adapters/dsh'
+export { ClaudeDesktopAdapter } from './adapters/claude-desktop'
+export { KimiCodeAdapter, KimiDesktopAdapter } from './adapters/kimi'
 export {
   BUILTIN_PRICES,
   effectivePriceTable,

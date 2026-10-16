@@ -120,6 +120,20 @@ describe('Store', () => {
     expect(s1.totals.total).toBe(12_400)
   })
 
+  it('不同 Agent 的同名会话不串用模型或项目路径', () => {
+    const now = 1_800_000_000_000
+    store.insertEvents([
+      ev({ id: 'dsh:shared:r1', sessionId: 'shared', agent: 'dsh', model: 'model-a', projectPath: '/projects/a', ts: now - 1000 }),
+      ev({ id: 'kimi:shared:r2', sessionId: 'shared', agent: 'kimi-code', model: 'model-b', projectPath: '/projects/b', ts: now - 500 })
+    ])
+    for (const rows of [store.sessions(), store.activeSessions(60_000, now), store.recentSessionsForLive(60_000, now)]) {
+      expect(rows.find((row) => row.agent === 'dsh')?.projectPath).toBe('/projects/a')
+      expect(rows.find((row) => row.agent === 'kimi-code')?.projectPath).toBe('/projects/b')
+    }
+    expect(store.activeSessions(60_000, now).find((row) => row.agent === 'dsh')?.model).toBe('model-a')
+    expect(store.recentSessionsForLive(60_000, now).find((row) => row.agent === 'kimi-code')?.model).toBe('model-b')
+  })
+
   it('migrateZcodeInputV2 拆分含缓存的历史输入且不影响其他 Agent', () => {
     store.insertEvents([
       ev({ id: 'mig:1', agent: 'zcode', model: 'GLM-5.3', tokens: { input: 1000, output: 10, reasoning: 0, cacheRead: 800, cacheWrite: 0 } }),

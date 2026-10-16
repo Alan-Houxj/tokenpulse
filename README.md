@@ -59,6 +59,12 @@ TokenPulse 把它们统统读出来，放进一个仪表盘。
 | ZCode | ✓ 完整（SQLite 直读，含实时状态） |
 | Gemini CLI | ✓ 完整 |
 | Qwen Code | ✓ 完整 |
+| DSH | 本地 v4 会话的输入、输出、缓存读写；支持压缩日志 |
+| Claude Desktop | 本地 Cowork / 内嵌 Code 用量记录；不含普通云聊天 |
+| Kimi Desktop | 本地 Agent 的用量记录；不含普通云聊天 |
+| Kimi Code | VS Code / Cursor 共用记录去重统计 |
+
+桌面客户端只统计已保存的真实用量，不按消息长度推算。没有本地用量的模式会显示「用量不可用」，而不是零消耗。新模型若没有内置价格，可在「设置 → 模型价格」填写单价。
 
 你的 Agent 没在列表里？[提个 issue](https://github.com/Alan-Houxj/tokenpulse/issues) 告诉我们它的数据存在哪。
 
