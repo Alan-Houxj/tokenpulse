@@ -62,7 +62,10 @@ function createMainWindow(): BrowserWindow {
     }
   })
 
-  win.on('ready-to-show', () => win.show())
+  win.on('ready-to-show', () => {
+    smokeMark('window-ready')
+    win.show()
+  })
 
   win.on('close', (e) => {
     if (!isQuitting) {
@@ -115,6 +118,7 @@ function createTray(): Tray {
   return t
 }
 
+smokeMark('entry')
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
@@ -134,6 +138,7 @@ if (!gotLock) {
     mainWindow = createMainWindow()
     tray = createTray()
     bindTray(tray)
+    smokeMark('tray-ready')
     // 启动后 3 秒给首轮回填一点时间，再刷一次托盘
     setTimeout(() => updateTrayNow(() => trayFallbackText()), 3000)
 

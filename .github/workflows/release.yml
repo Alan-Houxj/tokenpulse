@@ -6,20 +6,31 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             platform: windows
-          - os: macos-latest
+            arch: x64
+            package: --win portable nsis --x64
+          - os: macos-15-intel
             platform: macos
+            arch: x64
+            package: --mac dmg --x64
+          - os: macos-15
+            platform: macos
+            arch: arm64
+            package: --mac dmg --arm64
           - os: ubuntu-latest
             platform: linux
+            arch: x64
+            package: --linux AppImage deb --x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -28,101 +39,69 @@ jobs:
           node-version: 24
       - name: Install dependencies
         run: npm ci
-
-      - name: Tests & typecheck
-        run: |
-          npm run typecheck
-          npm test
-
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
       - name: Build app
-        run: npx electron-vite build
-
-      - name: Package & publish (tag only)
-        # workflow_dispatch 手动跑只出制品不上传；打了 v* 标签才发布到 Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: npx electron-builder --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Package only (manual run)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: npx electron-builder --publish never
-
-      - name: Runtime smoke test (启动 + 引导弹道探针)
+        run: npm run build
+      - name: Package without publishing
+        run: npx electron-builder ${{ matrix.package }} --publish never
+      - name: Runtime smoke test
         shell: bash
-        run: |
-          set -u
-          LOG=/tmp/tp-app.log
-          SMOKE=/tmp/tp-smoke
-          rm -rf "$SMOKE"
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            BIN="./dist/win-unpacked/TokenPulse.exe"
-            DB="$APPDATA/TokenPulse/agentmeter.db"
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            BIN="./dist/mac/TokenPulse.app/Contents/MacOS/TokenPulse"
-            DB="$HOME/Library/Application Support/TokenPulse/agentmeter.db"
-          else
-            BIN="./dist/linux-unpacked/tokenpulse"
-            [ -x "$BIN" ] || BIN="./dist/linux-unpacked/TokenPulse"
-            DB="$HOME/.config/TokenPulse/agentmeter.db"
-          fi
-          rm -f "$DB" "$DB-wal" "$DB-shm"
-          export TOKENPULSE_SMOKE_DIR="$SMOKE"
-          echo "launching: $BIN"
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            # CI 容器无 userns，chrome-sandbox 不可用（真实桌面无此问题），冒烟关闭沙箱
-            xvfb-run -a "$BIN" --no-sandbox > "$LOG" 2>&1 &
-            APP_PID=$!
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            # 直接执行 .app 内层二进制缺 GUI 上下文会在框架初始化挂起；经 LaunchServices 启动
-            open --env TOKENPULSE_SMOKE_DIR="$SMOKE" ./dist/mac/TokenPulse.app 2>&1 | tee -a "$LOG" || true
-            sleep 5
-            {
-              echo "---- 进程 ----"
-              pgrep -fl TokenPulse || echo "（无进程：启动即退）"
-              echo "---- 签名 ----"
-              codesign -dv ./dist/mac/TokenPulse.app 2>&1 | head -3 || true
-              echo "---- 崩溃报告 ----"
-              ls -t ~/Library/Logs/DiagnosticReports/ 2>/dev/null | head -3 || true
-            } >> "$LOG" 2>&1
-            APP_PID=""
-          else
-            "$BIN" > "$LOG" 2>&1 &
-            APP_PID=$!
-          fi
-          # 主判据：boot 探针（bootstrap 完成）；ready 无 boot = 挂在引导，两者皆无 = 未就绪
-          ok=0
-          for i in $(seq 1 60); do
-            if [ -f "$SMOKE/boot" ]; then ok=1; break; fi
-            if [ -n "$APP_PID" ] && ! kill -0 $APP_PID 2>/dev/null; then break; fi
-            sleep 1
-          done
-          sleep 2
-          echo "---- 探针 ----"; ls "$SMOKE" 2>/dev/null || echo "（无）"
-          echo "---- app log（尾部） ----"; tail -20 "$LOG" 2>/dev/null || true
-          echo "---- db ----"; ls -la "$DB" 2>/dev/null || echo "（未创建）"
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            taskkill //PID $APP_PID //T //F >/dev/null 2>&1 || true
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            osascript -e 'quit app "TokenPulse"' >/dev/null 2>&1 || pkill -f TokenPulse.app || true
-          else
-            kill $APP_PID 2>/dev/null || true
-          fi
-          sleep 2
-          if [ "$ok" != "1" ]; then
-            echo "::error::应用未在 60s 内完成引导（无 boot 探针）"
-            exit 1
-          fi
-          echo "启动验证通过"
-
-      - name: Upload artifacts (manual run inspection)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: bash .github/scripts/smoke-runtime.sh "${{ matrix.platform }}" "${{ matrix.arch }}"
+      - name: Upload runtime diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tokenpulse-${{ matrix.platform }}
+          name: runtime-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/tokenpulse-smoke-*/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload verified packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: tokenpulse-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             dist/*.exe
             dist/*.dmg
             dist/*.AppImage
             dist/*.deb
-          if-no-files-found: warn
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tokenpulse-*
+          path: dist/release-artifacts
+          merge-multiple: true
+      - name: Verify release package set and write checksums
+        run: node .github/scripts/release-packages.mjs dist/release-artifacts "${{ github.ref_name }}"
+      - name: Upload verified packages to draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null); then
+            if [ "$draft" != true ]; then
+              echo "Refusing to overwrite a published release"
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" \
+              --notes "Cross-platform packages built and startup-tested by GitHub Actions."
+          fi
+          gh release upload "$RELEASE_TAG" dist/release-artifacts/* --clobber
