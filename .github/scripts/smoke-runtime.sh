@@ -56,7 +56,7 @@ if [ "$PLATFORM" = macos ]; then
   cmp "$MOUNT/TokenPulse.app/Contents/MacOS/TokenPulse" "$BIN"
   cmp "$MOUNT/TokenPulse.app/Contents/Resources/app.asar" "$BUNDLE/Contents/Resources/app.asar"
   lipo -archs "$BIN" >> "$WORK/architecture.txt"
-  lipo -verify_arch "$MACH_ARCH" "$BIN"
+  lipo "$BIN" -verify_arch "$MACH_ARCH"
   plutil -lint "$BUNDLE/Contents/Info.plist" > "$WORK/plist.log"
   codesign -dv "$BUNDLE" > "$WORK/signature.log" 2>&1 || true
   DB="$HOME/Library/Application Support/TokenPulse/agentmeter.db"

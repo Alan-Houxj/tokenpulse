@@ -55,7 +55,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: runtime-${{ matrix.platform }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/tokenpulse-smoke-*/
+          path: |
+            ${{ runner.temp }}/tokenpulse-smoke-*/*.log
+            ${{ runner.temp }}/tokenpulse-smoke-*/*.txt
+            ${{ runner.temp }}/tokenpulse-smoke-*/marks/*
           if-no-files-found: warn
           retention-days: 14
       - name: Upload verified packages
