@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { ClaudeCodeAdapter } from '@core/adapters/claude-code'
@@ -115,7 +115,9 @@ describe('ClaudeDesktopAdapter', () => {
       join(root, 'local-agent-mode-sessions', 'aaaaaaaa', 'bbbbbbbb', 'cccccccc', 'dddddddd', 'eeeeeeee', 'ffffffff', '.claude', 'projects', 'session', 'too-deep.jsonl')
     ]) writeRows(path, [assistant()])
     const adapter = new ClaudeDesktopAdapter({ roots: root })
-    expect(adapter.discover().map((file) => file.path).sort()).toEqual(allowed.map(normalizePathKey).sort())
+    expect(adapter.discover().map((file) => file.path).sort()).toEqual(
+      allowed.map((path) => normalizePathKey(realpathSync(path))).sort()
+    )
   })
 
   it('deduplicates content blocks and copied roots using message ID, not row UUID', async () => {

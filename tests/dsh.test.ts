@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { appendFileSync, closeSync, existsSync, ftruncateSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, ftruncateSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { constants, zstdCompressSync } from 'node:zlib'
 import { DshAdapter } from '../src/core/adapters/dsh'
 import { decodeDshFrames, MAX_DSH_SOURCE_BYTES } from '../src/core/adapters/zstd-reader'
 import { appDataPath } from '../src/core/adapters/paths'
+import { normalizePathKey } from '../src/core/adapters/util'
 
 let dir: string
 const time = 1_790_000_000_000
@@ -70,7 +71,7 @@ describe('DSH roots and discovery', () => {
     expect(adapter().defaultRoots()).toEqual([dir])
     expect(adapter([]).discover()).toEqual([])
     expect(adapter([dir, join(dir, 'sessions')]).discover()).toHaveLength(1)
-    expect(adapter(join(dir, 'sessions')).discover()[0]!.path.replace(/\\/g, '/')).toBe(path.replace(/\\/g, '/').replace(/^[A-Z]/, s => s.toLowerCase()))
+    expect(adapter(join(dir, 'sessions')).discover()[0]!.path).toBe(normalizePathKey(realpathSync(path)))
     expect(() => adapter('')).toThrow(/nonempty/)
     expect(() => adapter(Array(17).fill(dir))).toThrow(/16/)
   })
