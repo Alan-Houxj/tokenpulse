@@ -55,7 +55,7 @@ TokenPulse 把它们统统读出来，放进一个仪表盘。
 | Agent | 支持情况 |
 |---|---|
 | Claude Code | ✓ 完整（含官方成本字段） |
-| Codex | ✓ 完整（新版 + 2026-09 前旧格式） |
+| Codex | 本地普通 / Zstandard 压缩会话记录；兼容新旧用量格式 |
 | ZCode | ✓ 完整（SQLite 直读，含实时状态） |
 | Gemini CLI | ✓ 完整 |
 | Qwen Code | ✓ 完整 |

@@ -1,14 +1,10 @@
-/**
- * Codex CLI/桌面版 适配器。
- * 数据：~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl
- *
- * 社区坑（已处理，共识见 cc-switch#3011 / ccusage#884）：
- * - token_usage_record.payload.usage 是「本响应」的用量 —— 唯一可信的增量来源
- * - event_msg(token_count) 的 total_token_usage 是累计值且非单调，绝不对它求和
- * - 模型名在 turn_context 行里，需要按序扫描文件维护当前模型状态
- */
-import type { AgentId, DiscoveredFile, ReadResult, SourceAdapter, UsageEvent } from '../model/types'
-import { dirExists, homePath, parseJsonLine, readLinesIncremental, walkFiles } from './util'
+/** Codex local rollout logs: plain JSONL and Zstandard-compressed JSONL share accounting IDs. */
+import { closeSync, openSync, readSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import type { AgentId, DiscoveredFile, ProbeResult, ReadResult, SourceAdapter, UsageEvent } from '../model/types'
+import { dirExists, homePath, normalizePathKey, parseJsonLine, readLinesIncremental, walkFiles } from './util'
+import { scanCodexLog } from './codex-log'
+import { probeRecordedUsage } from './probe-util'
 
 interface CodexUsage {
   input_tokens?: number
@@ -20,6 +16,7 @@ interface CodexUsage {
 
 interface CodexPayload {
   type?: string
+  id?: string
   session_id?: string
   response_id?: string
   usage?: CodexUsage
@@ -37,119 +34,264 @@ interface CodexLine {
   payload?: CodexPayload
 }
 
+interface ParserState {
+  model?: string
+  cwd?: string
+  sessionId?: string
+}
+
+interface CompressedCursor {
+  version: 1
+  offset: number
+  fingerprint: string
+  identity: string
+}
+
+interface CodexState extends ParserState {
+  compressed?: CompressedCursor
+}
+
+export interface CodexLogTail {
+  lines: string[]
+  sessionId?: string
+  model?: string
+  cwd?: string
+}
+
+const TAIL_BYTES = 64 * 1024
+const TAIL_CACHE_LIMIT = 12
+const tailCache = new Map<string, { signature: string; tail: CodexLogTail }>()
+
+function defaultRoots(): string[] {
+  return [process.env.CODEX_HOME?.trim() || homePath('.codex')]
+}
+
+export function discoverCodexLogs(roots: string[] = defaultRoots()): DiscoveredFile[] {
+  const files = new Map<string, DiscoveredFile>()
+  for (const root of roots) {
+    const sessions = dirExists(join(root, 'sessions')) ? join(root, 'sessions') : root
+    for (const file of walkFiles(sessions, (name) => name.startsWith('rollout-') &&
+      (name.endsWith('.jsonl') || name.endsWith('.jsonl.zst')))) {
+      files.set(file.path, file)
+    }
+  }
+  return [...files.values()]
+}
+
+function compressed(path: string): boolean {
+  return path.endsWith('.jsonl.zst')
+}
+
+function signature(path: string): string {
+  const st = statSync(path)
+  return `${st.dev}:${st.ino}:${st.birthtimeMs}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`
+}
+
+function cacheTail(path: string, version: string, tail: CodexLogTail): void {
+  const key = normalizePathKey(path)
+  tailCache.delete(key)
+  tailCache.set(key, { signature: version, tail })
+  if (tailCache.size > TAIL_CACHE_LIMIT) tailCache.delete(tailCache.keys().next().value!)
+}
+
+function stateOf(value: unknown): CodexState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const raw = value as Partial<CodexState>
+  return {
+    model: typeof raw.model === 'string' ? raw.model : undefined,
+    cwd: typeof raw.cwd === 'string' ? raw.cwd : undefined,
+    sessionId: typeof raw.sessionId === 'string' ? raw.sessionId : undefined,
+    compressed: raw.compressed
+  }
+}
+
+function contextOf(raw: CodexLine, state: ParserState): void {
+  const payload = raw.payload
+  if (!payload) return
+  if (raw.type === 'turn_context') {
+    if (typeof payload.model === 'string' && payload.model) state.model = payload.model
+    if (typeof payload.cwd === 'string' && payload.cwd) state.cwd = payload.cwd
+  } else if (raw.type === 'session_meta') {
+    // session_id is the historical accounting identity; payload.id can identify a different thread.
+    if (typeof payload.session_id === 'string' && payload.session_id) state.sessionId = payload.session_id
+    if (typeof payload.cwd === 'string' && payload.cwd) state.cwd = payload.cwd
+  }
+}
+
+function parseUsage(raw: CodexLine, state: ParserState): UsageEvent | undefined {
+  const payload = raw.payload
+  if (!payload) return undefined
+  const ts = raw.timestamp ? Date.parse(raw.timestamp) : 0
+  if (raw.type === 'token_usage_record') {
+    const usage = payload.usage
+    if (!usage || !payload.response_id) return undefined
+    const sid = payload.session_id ?? state.sessionId ?? 'unknown-session'
+    const cached = Math.max(0, usage.cached_input_tokens ?? 0)
+    const reasoning = Math.max(0, usage.reasoning_output_tokens ?? 0)
+    return {
+      id: `codex:${sid}:${payload.response_id}`,
+      ts, agent: 'codex', sessionId: sid, model: state.model ?? 'unknown',
+      tokens: {
+        input: Math.max(0, (usage.input_tokens ?? 0) - cached),
+        output: Math.max(0, (usage.output_tokens ?? 0) - reasoning),
+        reasoning,
+        cacheRead: cached,
+        cacheWrite: Math.max(0, usage.cache_write_input_tokens ?? 0)
+      },
+      costUSD: undefined, costEstUSD: 0, projectPath: state.cwd
+    }
+  }
+  if (raw.type === 'event_msg' && payload.type === 'token_count') {
+    const last = payload.info?.last_token_usage
+    const total = payload.info?.total_token_usage
+    if (!last || !total) return undefined
+    const sid = state.sessionId ?? 'unknown-session'
+    const cached = Math.max(0, last.cached_input_tokens ?? 0)
+    const reasoning = Math.max(0, last.reasoning_output_tokens ?? 0)
+    return {
+      // Preserve prior cumulative-fingerprint keys when a plain log becomes compressed.
+      id: `codex:${sid}:tc:${total.input_tokens ?? 0}-${total.output_tokens ?? 0}`,
+      ts, agent: 'codex', sessionId: sid, model: state.model ?? 'unknown',
+      tokens: {
+        input: Math.max(0, (last.input_tokens ?? 0) - cached),
+        output: Math.max(0, (last.output_tokens ?? 0) - reasoning),
+        reasoning,
+        cacheRead: cached,
+        cacheWrite: Math.max(0, last.cache_write_input_tokens ?? 0)
+      },
+      costUSD: undefined, costEstUSD: 0, projectPath: state.cwd
+    }
+  }
+  return undefined
+}
+
+function isRecognized(raw: CodexLine): boolean {
+  return !!raw.payload && ['session_meta', 'turn_context', 'token_usage_record', 'event_msg', 'response_item'].includes(raw.type ?? '')
+}
+
+function tailMetadata(lines: string[], initial: ParserState = {}): ParserState {
+  const state = { ...initial }
+  for (const line of lines) {
+    const raw = parseJsonLine<CodexLine>(line)
+    if (!raw) continue
+    contextOf(raw, state)
+    if (raw.type === 'session_meta' && !state.sessionId && typeof raw.payload?.id === 'string') {
+      state.sessionId = raw.payload.id
+    }
+  }
+  return state
+}
+
+/** Cache only a bounded decoded tail; immutable archives need not be decompressed on every live poll. */
+export async function readCodexLogTail(file: DiscoveredFile): Promise<CodexLogTail> {
+  const version = signature(file.path)
+  const key = normalizePathKey(file.path)
+  const cached = tailCache.get(key)
+  if (cached?.signature === version) return cached.tail
+  if (!compressed(file.path)) {
+    const size = statSync(file.path).size
+    const fd = openSync(file.path, 'r')
+    let prefix: string[]
+    try {
+      const bytes = Buffer.alloc(Math.min(size, TAIL_BYTES))
+      const n = readSync(fd, bytes, 0, bytes.length, 0)
+      const end = bytes.subarray(0, n).lastIndexOf(10)
+      prefix = end < 0 ? [] : bytes.subarray(0, end).toString('utf8').split('\n')
+    } finally { closeSync(fd) }
+    const { lines } = readLinesIncremental(file.path, Math.max(0, size - TAIL_BYTES))
+    const state = tailMetadata(lines, tailMetadata(prefix))
+    if (signature(file.path) !== version) throw new Error('Codex 日志正在变化，请稍后重试')
+    const tail = { lines, ...state }
+    cacheTail(file.path, version, tail)
+    return tail
+  }
+  const context: ParserState = {}
+  let nativeId: string | undefined
+  const result = await scanCodexLog(file, (line) => {
+    const raw = parseJsonLine<CodexLine>(line)
+    if (!raw) return
+    contextOf(raw, context)
+    if (raw.type === 'session_meta' && typeof raw.payload?.id === 'string') nativeId = raw.payload.id
+  })
+  const tail = { lines: result.tailLines, ...context, sessionId: context.sessionId ?? nativeId }
+  cacheTail(file.path, version, tail)
+  return tail
+}
+
 export class CodexAdapter implements SourceAdapter {
   readonly id: AgentId = 'codex'
   readonly displayName = 'Codex'
   private readonly rootCandidates: string[]
 
   constructor(opts: { roots?: string[] | string } = {}) {
-    // 防御：误传单个字符串时包裹成数组（字符串有 length，直接用会被逐字符迭代）
     const roots = typeof opts.roots === 'string' ? [opts.roots] : opts.roots
-    this.rootCandidates = roots?.length ? roots : [homePath('.codex')]
+    this.rootCandidates = roots?.length ? [...roots] : defaultRoots()
   }
 
-  defaultRoots(): string[] {
-    return this.rootCandidates
+  defaultRoots(): string[] { return [...this.rootCandidates] }
+  discover(): DiscoveredFile[] { return discoverCodexLogs(this.rootCandidates) }
+
+  probe(): Promise<ProbeResult> {
+    return probeRecordedUsage(this, {
+      coverage: '支持 Codex 普通 JSONL 与 Zstandard 压缩记录',
+      emptyDetail: '未发现 Codex rollout 用量记录（支持 .jsonl / .jsonl.zst）',
+      noUsageDetail: '已识别 Codex 记录，目前尚无可统计的用量事件'
+    })
   }
 
-  discover(): DiscoveredFile[] {
-    const files: DiscoveredFile[] = []
-    for (const root of this.rootCandidates) {
-      const sessionsDir = dirExists(joinDir(root, 'sessions')) ? joinDir(root, 'sessions') : root
-      files.push(...walkFiles(sessionsDir, (n) => n.startsWith('rollout-') && n.endsWith('.jsonl')))
-    }
-    const seen = new Map<string, DiscoveredFile>()
-    for (const f of files) seen.set(f.path, f)
-    return [...seen.values()]
-  }
-
-  async readIncremental(file: DiscoveredFile, fromOffset: number, state?: unknown): Promise<ReadResult> {
-    const { lines, endOffset } = readLinesIncremental(file.path, fromOffset)
-    const events: UsageEvent[] = []
-    // 恢复上次读取结束时的行内状态（模型名只写在文件头的 turn_context 里，
-    // 跨增量段必须持久化，否则新段里的用量记录会丢模型回退成 unknown）
-    const st = (state ?? {}) as { model?: string; cwd?: string; sessionId?: string }
-    let currentModel = st.model ?? 'unknown'
-    let currentCwd = st.cwd
-    let sessionId = st.sessionId
-
-    for (const line of lines) {
-      const raw = parseJsonLine<CodexLine>(line)
-      if (!raw?.type || !raw.payload) continue
-
-      const ts = raw.timestamp ? Date.parse(raw.timestamp) : 0
-
-      if (raw.type === 'turn_context') {
-        if (raw.payload.model) currentModel = raw.payload.model
-        if (raw.payload.cwd) currentCwd = raw.payload.cwd
-      } else if (raw.type === 'session_meta') {
-        sessionId = raw.payload.session_id ?? sessionId
-        if (raw.payload.cwd) currentCwd = raw.payload.cwd
-      } else if (raw.type === 'token_usage_record') {
-        const u = raw.payload.usage
-        if (!u || !raw.payload.response_id) continue
-        const sid = raw.payload.session_id ?? sessionId ?? 'unknown-session'
-        // OpenAI 口径：input_tokens 含 cached；output_tokens 含 reasoning → 归一化拆开
-        const cached = Math.max(0, u.cached_input_tokens ?? 0)
-        const input = Math.max(0, (u.input_tokens ?? 0) - cached)
-        const reasoning = Math.max(0, u.reasoning_output_tokens ?? 0)
-        const output = Math.max(0, (u.output_tokens ?? 0) - reasoning)
-        events.push({
-          id: `codex:${sid}:${raw.payload.response_id}`,
-          ts,
-          agent: 'codex',
-          sessionId: sid,
-          model: currentModel,
-          tokens: {
-            input,
-            output,
-            reasoning,
-            cacheRead: cached,
-            cacheWrite: Math.max(0, u.cache_write_input_tokens ?? 0)
-          },
-          costUSD: undefined,
-          costEstUSD: 0,
-          projectPath: currentCwd
-        })
-      } else if (raw.type === 'event_msg' && raw.payload.type === 'token_count') {
-        // 旧版格式（<2026-09）：无 token_usage_record，只有 token_count。
-        // info.last_token_usage = 最近一次响应的增量；total_token_usage 为累计（非单调，不可求和）。
-        // 幂等键用累计值指纹：重放相同累计只记一次，新响应累计变化生成新键。
-        const info = raw.payload.info
-        const last = info?.last_token_usage
-        const total = info?.total_token_usage
-        if (!last || !total) continue
-        const sid = sessionId ?? 'unknown-session'
-        const cached = Math.max(0, last.cached_input_tokens ?? 0)
-        const reasoning = Math.max(0, last.reasoning_output_tokens ?? 0)
-        events.push({
-          id: `codex:${sid}:tc:${total.input_tokens ?? 0}-${total.output_tokens ?? 0}`,
-          ts,
-          agent: 'codex',
-          sessionId: sid,
-          model: currentModel,
-          tokens: {
-            input: Math.max(0, (last.input_tokens ?? 0) - cached),
-            output: Math.max(0, (last.output_tokens ?? 0) - reasoning),
-            reasoning,
-            cacheRead: cached,
-            cacheWrite: Math.max(0, last.cache_write_input_tokens ?? 0)
-          },
-          costUSD: undefined,
-          costEstUSD: 0,
-          projectPath: currentCwd
-        })
+  async readIncremental(file: DiscoveredFile, fromOffset: number, saved?: unknown): Promise<ReadResult> {
+    if (!compressed(file.path)) {
+      const size = statSync(file.path).size
+      const reset = size < fromOffset
+      const state: ParserState = reset ? {} : stateOf(saved)
+      const { lines, endOffset } = readLinesIncremental(file.path, reset ? 0 : fromOffset)
+      const events: UsageEvent[] = []
+      let recognized = false
+      for (const line of lines) {
+        const raw = parseJsonLine<CodexLine>(line)
+        if (!raw) continue
+        recognized ||= isRecognized(raw)
+        contextOf(raw, state)
+        const event = parseUsage(raw, state)
+        if (event) events.push(event)
+      }
+      return {
+        events, endOffset, recognized,
+        state: { model: state.model ?? 'unknown', cwd: state.cwd, sessionId: state.sessionId }
       }
     }
 
+    const version = signature(file.path)
+    const previous = stateOf(saved).compressed
+    const verify = previous?.version === 1 && previous.offset === fromOffset &&
+      Number.isSafeInteger(fromOffset) && fromOffset >= 0 ? fromOffset : undefined
+    const context: ParserState = {}
+    let nativeId: string | undefined
+    let recognized = false
+    const collected: { event: UsageEvent; end: number }[] = []
+    const result = await scanCodexLog(file, (line, end) => {
+      const raw = parseJsonLine<CodexLine>(line)
+      if (!raw) return
+      recognized ||= isRecognized(raw)
+      contextOf(raw, context)
+      if (raw.type === 'session_meta' && typeof raw.payload?.id === 'string') nativeId = raw.payload.id
+      const event = parseUsage(raw, context)
+      if (event) collected.push({ event, end })
+    }, verify)
+    const canResume = verify !== undefined && result.previousFingerprint === previous?.fingerprint &&
+      result.identity === previous?.identity
+    const events = collected.filter((item) => !canResume || item.end > fromOffset).map((item) => item.event)
+    cacheTail(file.path, version, {
+      lines: result.tailLines, ...context, sessionId: context.sessionId ?? nativeId
+    })
     return {
-      events,
-      endOffset,
-      state: { model: currentModel, cwd: currentCwd, sessionId }
+      events, endOffset: result.endOffset, recognized,
+      state: {
+        model: context.model ?? 'unknown', cwd: context.cwd, sessionId: context.sessionId,
+        compressed: {
+          version: 1, offset: result.endOffset, fingerprint: result.fingerprint, identity: result.identity
+        } satisfies CompressedCursor
+      } satisfies CodexState
     }
   }
-}
-
-function joinDir(a: string, b: string): string {
-  return `${a.replace(/[\\/]+$/, '')}/${b}`
 }

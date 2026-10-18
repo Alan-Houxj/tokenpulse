@@ -16,13 +16,14 @@ import { DatabaseSync } from 'node:sqlite'
 import type { Store } from '../store/sqlite'
 import type { LiveAgentCard, LiveStatus } from '../model/types'
 import { canonicalModelId } from './cost'
-import { readLinesIncremental, parseJsonLine, walkFiles } from '../adapters/util'
+import { discoverCodexLogs, readCodexLogTail } from '../adapters/codex'
+import { readLinesIncremental, parseJsonLine } from '../adapters/util'
 
 const ACTIVITY_WINDOW_MS = 60 * 60_000 // 看板只显示近 1 小时内有活动的会话
 const IDLE_AFTER_MS = 30_000
 const STALE_AFTER_MS = 5 * 60_000
 
-export function collectLiveAgents(store: Store): LiveAgentCard[] {
+export async function collectLiveAgents(store: Store): Promise<LiveAgentCard[]> {
   const now = Date.now()
   const cards: LiveAgentCard[] = []
   try {
@@ -31,11 +32,12 @@ export function collectLiveAgents(store: Store): LiveAgentCard[] {
     /* ZCode 源不可达则跳过 */
   }
   try {
-    cards.push(...codexLive(now))
+    cards.push(...await codexLive(now))
   } catch {
     /* 同上 */
   }
-  cards.push(...genericLive(store, now))
+  const codexSessions = new Set(cards.filter((card) => card.agent === 'codex').map((card) => card.sessionId))
+  cards.push(...genericLive(store, now).filter((card) => card.agent !== 'codex' || !codexSessions.has(card.sessionId)))
   return cards
 }
 
@@ -262,34 +264,47 @@ function extractPartText(pdata: string | null | undefined): string | null {
 
 // ---------------- Codex：rollout 尾部解析 ----------------
 
-function codexLive(now: number): LiveAgentCard[] {
-  const sessionsRoot = join(homedir(), '.codex', 'sessions')
-  const files = walkFiles(sessionsRoot, (n) => n.startsWith('rollout-') && n.endsWith('.jsonl'))
+async function codexLive(now: number, roots?: string[]): Promise<LiveAgentCard[]> {
+  const files = discoverCodexLogs(roots)
     .filter((f) => now - f.mtimeMs < ACTIVITY_WINDOW_MS)
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
     .slice(0, 6)
 
   const cards: LiveAgentCard[] = []
   for (const file of files) {
-    const card = codexFileCard(file.path, file.size, file.mtimeMs, now)
-    if (card) cards.push(card)
+    try {
+      const tail = await readCodexLogTail(file)
+      const card = codexLinesCard(file.path, file.mtimeMs, now, tail)
+      if (card) cards.push(card)
+    } catch {
+      // A missing or unreadable rollout must not hide other sessions.
+    }
   }
   return cards
 }
 
 function codexFileCard(path: string, size: number, mtimeMs: number, now: number): LiveAgentCard | null {
-  const { lines } = readLinesIncremental(path, Math.max(0, size - 64 * 1024))
-  let sessionId = ''
-  let cwd: string | undefined
+  const tail = readLinesIncremental(path, Math.max(0, size - 64 * 1024))
+  return codexLinesCard(path, mtimeMs, now, tail)
+}
+
+function codexLinesCard(
+  path: string,
+  mtimeMs: number,
+  now: number,
+  tail: Awaited<ReturnType<typeof readCodexLogTail>>
+): LiveAgentCard | null {
+  let sessionId = tail.sessionId ?? ''
+  let cwd = tail.cwd
   let lastTs = 0
-  let model: string | undefined
+  let model = tail.model ? canonicalModelId(tail.model) : undefined
   let lastTool: { name: string; ts: number } | null = null
   let lastUserText: { text: string; ts: number } | null = null
   let lastCompleteTs = 0
   let taskTokens = 0
   let error: string | null = null
 
-  for (const line of lines) {
+  for (const line of tail.lines) {
     const j = parseJsonLine<Record<string, unknown>>(line)
     if (!j) continue
     const ts = typeof j['timestamp'] === 'string' ? Date.parse(j['timestamp']) : 0
@@ -297,7 +312,7 @@ function codexFileCard(path: string, size: number, mtimeMs: number, now: number)
     const type = String(j['type'] ?? '')
     const payload = (j['payload'] ?? {}) as Record<string, unknown>
     if (type === 'session_meta') {
-      sessionId = String(payload['session_id'] ?? '')
+      sessionId = String(payload['session_id'] || payload['id'] || sessionId)
       cwd = typeof payload['cwd'] === 'string' ? payload['cwd'] : cwd
     } else if (type === 'turn_context') {
       if (typeof payload['model'] === 'string') model = canonicalModelId(payload['model'])
@@ -327,7 +342,10 @@ function codexFileCard(path: string, size: number, mtimeMs: number, now: number)
   }
 
   if (!lastTs) return null
-  const lastActivityTs = Math.max(lastTs, mtimeMs - 1000)
+  const compressed = path.endsWith('.jsonl.zst')
+  // Recompression changes mtime, not the session's last activity.
+  if (compressed && now - lastTs >= ACTIVITY_WINDOW_MS) return null
+  const lastActivityTs = compressed ? lastTs : Math.max(lastTs, mtimeMs - 1000)
   const projectName = lastSegment(cwd ?? '')
 
   const secSince = (t: number): number => Math.max(0, Math.round((now - t) / 1000))
@@ -355,7 +373,7 @@ function codexFileCard(path: string, size: number, mtimeMs: number, now: number)
   const taskStartTs = lastUserText?.ts ?? lastTs - 30 * 60_000
   return {
     agent: 'codex',
-    sessionId: sessionId || (path.split('/').pop() ?? path),
+    sessionId: sessionId || lastSegment(path).replace(/\.zst$/, ''),
     projectName: projectName || 'Codex',
     projectPath: cwd,
     model,
@@ -419,4 +437,4 @@ function lastSegment(path: string): string {
 }
 
 /** 测试用：暴露内部推断函数 */
-export const __internals = { zcodeSessionCard, codexFileCard }
+export const __internals = { zcodeSessionCard, codexFileCard, codexLinesCard, codexLive }
